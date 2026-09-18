@@ -40,6 +40,7 @@ dependencies:
   just_audio: ^0.10.6
   share_plus: ^13.3.0
   crypto: ^3.0.7
+  youtube_explode_dart: ^3.1.0
 
 dev_dependencies:
   flutter_test:

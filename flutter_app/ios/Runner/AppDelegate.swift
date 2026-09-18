@@ -16,8 +16,8 @@ import AVFoundation
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ScoreStudioAudio") else { return }
     let channel = FlutterMethodChannel(name: "score_studio/audio", binaryMessenger: registrar.messenger())
     channel.setMethodCallHandler { call, result in
-      guard call.method == "decode", let args = call.arguments as? [String: String],
-            let path = args["path"], let output = args["output"] else {
+      guard call.method == "decode", let args = call.arguments as? [String: Any],
+            let path = args["path"] as? String, let output = args["output"] as? String else {
         result(FlutterMethodNotImplemented); return
       }
       DispatchQueue.global(qos: .userInitiated).async {
@@ -28,7 +28,9 @@ import AVFoundation
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let input = try AVAudioFile(forReading: url)
             let format = input.processingFormat
-            guard format.channelCount <= 2, Double(input.length) / format.sampleRate <= 180 else {
+            let excerpt = args["excerpt"] as? Bool ?? false
+            let duration = Double(input.length) / format.sampleRate
+            guard format.channelCount <= 2, duration > 0, duration <= (excerpt ? 600 : 180) else {
               throw NSError(domain: "ScoreStudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a mono or stereo recording up to three minutes long."])
             }
             let settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM,
@@ -40,8 +42,10 @@ import AVFoundation
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8192) else {
               throw NSError(domain: "ScoreStudio", code: 2, userInfo: [NSLocalizedDescriptionKey: "Not enough memory to import audio."])
             }
-            while input.framePosition < input.length {
-              try input.read(into: buffer)
+            let endFrame = min(input.length, AVAudioFramePosition(format.sampleRate * 180))
+            while input.framePosition < endFrame {
+              let count = AVAudioFrameCount(min(8192, endFrame - input.framePosition))
+              try input.read(into: buffer, frameCount: count)
               if buffer.frameLength == 0 { break }
               try target.write(from: buffer)
             }

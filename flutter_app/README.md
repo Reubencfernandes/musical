@@ -23,3 +23,11 @@ dart run bin/native_smoke.dart /absolute/path/to/Audiocpp.framework/Audiocpp
 Web builds show a native-app notice; browser builds cannot load this Dart FFI engine. Android native packaging is not implemented. Apple framework packaging is provided but needs Xcode/device validation. Windows native compilation and ABI smoke checks do not establish phone compatibility.
 
 Both upstream model adapters currently return complete offline results. Stage messages and the UI remain responsive, but playable audio chunks and immediate cancellation during native execution are not supported. A stop request waits for the next safe boundary. No real-model generation, phone memory fit or generation speed is certified by the automated tests. See [validation notes](../docs/mobile-inference.md).
+
+## YouTube audio import
+
+In **Transcribe**, paste a YouTube video link and select **Import YouTube audio**. The app fetches an audio-only MP4 track directly from YouTube, converts its first three minutes to PCM WAV, and selects it for **Create score**. Limits: finished videos up to 10 minutes, audio downloads up to 100 MB. Downloads require internet; inference remains local after import and model installation.
+
+Uses `youtube_explode_dart` without cookies, a proxy, a hosted downloader or a desktop JavaScript process. YouTube can reject requests or change its stream APIs, so this is a best-effort import, not a guaranteed downloader. Failed/cancelled imports clean up partial files and preserve the previous selected recording. Upload remains available. iPhone/Mac conversion uses AVFoundation; Windows/Linux need FFmpeg on PATH. Android conversion remains pending.
+
+`dart run bin/youtube_smoke.dart <video-url>` checks a real download and converts a ten-second validation excerpt on a desktop with FFmpeg. This command removes its temporary files. Apple native conversion still requires a Mac/iPhone build test.

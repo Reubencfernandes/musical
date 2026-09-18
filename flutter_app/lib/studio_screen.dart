@@ -11,6 +11,8 @@ import 'inference/inference_service.dart';
 import 'inference/model_store.dart';
 import 'inference/native_api.dart';
 import 'widgets/musician.dart';
+import 'imports/youtube_import.dart';
+import 'imports/audio_converter.dart';
 
 class StudioScreen extends StatefulWidget {
   const StudioScreen({super.key});
@@ -22,7 +24,12 @@ class _StudioScreenState extends State<StudioScreen> {
   final engine = InferenceService(), player = AudioPlayer();
   final style = TextEditingController(),
       lyrics = TextEditingController(),
-      abc = TextEditingController();
+      abc = TextEditingController(),
+      youtube = TextEditingController();
+  final youtubeImporter = YoutubeImporter();
+  bool importing = false;
+  double? importProgress;
+  String importStage = '', inputTitle = '';
   StreamSubscription<Map<String, dynamic>>? subscription;
   List<ModelPackage> packages = [];
   final installed = <String>{};
@@ -150,6 +157,43 @@ class _StudioScreenState extends State<StudioScreen> {
     }
   }
 
+  Future<void> _importYoutube() async {
+    if (documents == null || importing || busy || downloading) return;
+    setState(() {
+      importing = true;
+      error = '';
+      importProgress = null;
+    });
+    try {
+      final result = await youtubeImporter.import(
+        youtube.text,
+        Directory('${documents!.path}/imports'),
+        convertYoutubeAudio,
+        (message, progress) {
+          if (mounted) {
+            setState(() {
+              importStage = message;
+              importProgress = progress;
+            });
+          }
+        },
+      );
+      if (mounted) {
+        setState(() {
+          inputAudio = result.path;
+          inputTitle =
+              '${result.title}${result.excerpt ? ' · first 3 minutes' : ''}';
+        });
+      }
+    } on ImportCancelled {
+      if (mounted) setState(() => error = 'YouTube import cancelled.');
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => importing = false);
+    }
+  }
+
   Future<void> _pickAudio() async {
     try {
       final result = await FilePicker.pickFile(
@@ -172,14 +216,19 @@ class _StudioScreenState extends State<StudioScreen> {
             }) ??
             path;
       }
-      if (mounted) setState(() => inputAudio = selected);
+      if (mounted) {
+        setState(() {
+          inputAudio = selected;
+          inputTitle = 'Uploaded recording';
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => error = 'Could not import audio: $e');
     }
   }
 
   Future<void> _run() async {
-    if (busy || downloading || documents == null) return;
+    if (busy || downloading || importing || documents == null) return;
     if (family == 'yue2' &&
         (style.text.trim().isEmpty || lyrics.text.trim().isEmpty)) {
       setState(() => error = 'Add a style and lyrics first.');
@@ -245,6 +294,8 @@ class _StudioScreenState extends State<StudioScreen> {
   @override
   void dispose() {
     store?.cancel();
+    youtubeImporter.cancel();
+    youtube.dispose();
     if (engine.busy) unawaited(engine.cancel());
     subscription?.cancel();
     elapsedTimer?.cancel();
@@ -275,7 +326,16 @@ class _StudioScreenState extends State<StudioScreen> {
                 const SizedBox(height: 8),
                 const Text('Your music. On your device.'),
                 const SizedBox(height: 28),
-                if (busy) ...[
+                if (importing) ...[
+                  const Center(child: Musician()),
+                  Text(importStage, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(value: importProgress),
+                  TextButton(
+                    onPressed: () => youtubeImporter.cancel(),
+                    child: const Text('Cancel import'),
+                  ),
+                ] else if (busy) ...[
                   const Center(child: Musician()),
                   Text(stage, textAlign: TextAlign.center),
                   const SizedBox(height: 8),
@@ -398,6 +458,36 @@ class _StudioScreenState extends State<StudioScreen> {
                     const Text(
                       'Up to 3 minutes. iPhone accepts WAV, MP3 and M4A; desktop currently accepts PCM WAV.',
                     ),
+                  ],
+                  if (family == 'sheetsage2') ...[
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: youtube,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Or paste a YouTube link',
+                        hintText: 'https://youtu.be/…',
+                      ),
+                      onSubmitted: (_) => _importYoutube(),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Imports the first 3 minutes from videos up to 10 minutes. Some videos may block downloads.',
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: documents == null || downloading
+                          ? null
+                          : _importYoutube,
+                      icon: const Icon(Icons.link),
+                      label: const Text('Import YouTube audio'),
+                    ),
+                    if (inputTitle.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('Ready: $inputTitle'),
+                      ),
                   ],
                   ExpansionTile(
                     title: const Text('Processing options'),
