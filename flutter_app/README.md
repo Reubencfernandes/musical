@@ -31,3 +31,5 @@ In **Transcribe**, paste a YouTube video link and select **Import YouTube audio*
 Uses `youtube_explode_dart` without cookies, a proxy, a hosted downloader or a desktop JavaScript process. YouTube can reject requests or change its stream APIs, so this is a best-effort import, not a guaranteed downloader. Failed/cancelled imports clean up partial files and preserve the previous selected recording. Upload remains available. iPhone/Mac conversion uses AVFoundation; Windows/Linux need FFmpeg on PATH. Android conversion remains pending.
 
 `dart run bin/youtube_smoke.dart <video-url>` checks a real download and converts a ten-second validation excerpt on a desktop with FFmpeg. This command removes its temporary files. Apple native conversion still requires a Mac/iPhone build test.
+
+Validation: 15 automated tests pass, including timeout/cancellation recovery. A live test of the supplied YouTube link reached stream selection but the audio download stalled on the development network; end-to-end YouTube success and Apple conversion are not yet verified.

@@ -194,11 +194,13 @@ typedef AudioConverter = Future<void> Function(String source, String output);
 class YoutubeImporter {
   final YoutubeSource Function() sourceFactory;
   final Duration lookupTimeout;
+  final Duration downloadTimeout;
   YoutubeSource? _source;
   bool _cancelled = false, busy = false;
   YoutubeImporter({
     YoutubeSource Function()? sourceFactory,
     this.lookupTimeout = const Duration(seconds: 60),
+    this.downloadTimeout = const Duration(seconds: 30),
   }) : sourceFactory = sourceFactory ?? DirectYoutubeSource.new;
 
   void cancel() {
@@ -242,8 +244,18 @@ class YoutubeImporter {
       final sink = compressed.openWrite();
       int received = 0;
       try {
+        progress('Downloading audio…', 0);
         await for (final chunk in audio.bytes.timeout(
-          const Duration(seconds: 30),
+          downloadTimeout,
+          onTimeout: (events) {
+            // Unblock the worker's pending read before await-for cancels its
+            // async generator; otherwise stream cancellation can wait forever.
+            _source?.close();
+            events.addError(
+              TimeoutException('YouTube audio download stalled.'),
+            );
+            events.close();
+          },
         )) {
           _check();
           received += chunk.length;

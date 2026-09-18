@@ -25,7 +25,53 @@ class StalledSource implements YoutubeSource {
   }
 }
 
+class StalledDownload implements YoutubeSource {
+  final stopped = Completer<void>();
+  @override
+  Future<YoutubeAudio> open(String id) async =>
+      YoutubeAudio('Song', const Duration(seconds: 10), 10, bytes());
+  Stream<List<int>> bytes() async* {
+    await stopped.future;
+  }
+
+  @override
+  void close() {
+    if (!stopped.isCompleted) stopped.complete();
+  }
+}
+
 void main() {
+  test(
+    'Stalled download closes its source before awaiting stream cancellation',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'youtube-stream-timeout-',
+      );
+      final source = StalledDownload();
+      final importer = YoutubeImporter(
+        sourceFactory: () => source,
+        downloadTimeout: const Duration(milliseconds: 20),
+      );
+      try {
+        await expectLater(
+          importer
+              .import(
+                'https://youtu.be/u10U7BHQQ2Y',
+                root,
+                (_, _) async => fail('Must not convert'),
+                (_, _) {},
+              )
+              .timeout(const Duration(seconds: 2)),
+          throwsStateError,
+        );
+        expect(source.stopped.isCompleted, true);
+        expect(importer.busy, false);
+        expect(await root.list().isEmpty, true);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
   test('A stalled lookup times out and releases the importer', () async {
     final root = await Directory.systemTemp.createTemp('youtube-timeout-');
     final source = StalledSource();
