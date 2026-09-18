@@ -18,6 +18,29 @@ Choose your signing team and a unique bundle identifier in Xcode. Connect the iP
 
 Only the YuE2 and SheetSage2 model modules are selected. Parallel compilation is limited to two jobs for an 8 GB Mac. Do not run model inference and the build simultaneously on that machine.
 
+## App Store Connect and TestFlight release
+
+The iOS target links and embeds `native/artifacts/ios/Audiocpp.framework`. Run the native build before every archive (and again after changing the pinned engine), because the framework is intentionally ignored by Git:
+
+```sh
+cd flutter_app
+flutter pub get
+bash native/build_apple.sh ios
+flutter build ipa --release --export-method app-store
+```
+
+The IPA is written to `build/ios/ipa/score_studio.ipa`; the archive used for upload is `build/ios/archive/Runner.xcarchive`. `build_apple.sh` updates the Xcode project through `link_ios.rb`, which adds the framework search path and ensures the embed phase runs before Flutter's `Thin Binary` phase. Do not remove or manually reorder those entries.
+
+For an upload, sign in to Xcode with the Apple Developer account that owns `com.reubencf.scoreStudio`, then open the archive in Organizer:
+
+```sh
+open build/ios/archive/Runner.xcarchive
+```
+
+In Organizer select **Distribute App** → **App Store Connect** → **Upload**. The first upload creates or selects an App Store Connect record with a globally unique app name; this release uses **Kiku AI**. An Organizer status of “Uploaded to Apple” means Apple has accepted the binary, not that it is already testable: wait for App Store Connect processing to finish, then add the build to TestFlight and choose testers there.
+
+The current native framework archive does not include a matching `Audiocpp.framework` dSYM. Upload is still accepted, but native crash reports will not be fully symbolicated until a matching dSYM is produced and uploaded.
+
 ## Other desktop platforms
 
 With a C++17 compiler and CMake installed, clone the pinned audio.cpp revision into `native/external/audio.cpp`, then run:

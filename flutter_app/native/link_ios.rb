@@ -16,7 +16,13 @@ unless phase.files_references.include?(reference)
   entry = phase.add_file_reference(reference)
   entry.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy', 'RemoveHeadersOnCopy'] }
 end
+runner.build_phases.delete(phase)
+thin_binary_index = runner.build_phases.index { |item| item.respond_to?(:name) && item.name == 'Thin Binary' }
+runner.build_phases.insert(thin_binary_index || runner.build_phases.length, phase)
 runner.build_configurations.each do |config|
+  search_paths = Array(config.build_settings['FRAMEWORK_SEARCH_PATHS'])
+  artifact_path = "$(PROJECT_DIR)/../native/artifacts/#{platform}"
+  config.build_settings['FRAMEWORK_SEARCH_PATHS'] = (search_paths + ['$(inherited)', artifact_path]).uniq
   paths = Array(config.build_settings['LD_RUNPATH_SEARCH_PATHS'])
   framework_path = platform == 'macos' ? '@executable_path/../Frameworks' : '@executable_path/Frameworks'
   config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = (paths + ['$(inherited)', framework_path]).uniq
