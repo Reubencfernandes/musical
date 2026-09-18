@@ -13,7 +13,9 @@ void main() {
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pumpWidget(const ScoreStudioApp());
-    expect(find.text('Your music.\nWritten down.'), findsOneWidget);
+    expect(find.text('Score Studio'), findsOneWidget);
+    expect(find.text('Create music'), findsOneWidget);
+    expect(find.text('Transcribe'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.byType(Scaffold))).brightness,
       Brightness.dark,

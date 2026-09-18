@@ -1,6 +1,6 @@
 # Score Studio
 
-Audio-to-score web application and Flutter starter for a future on-device music studio. The app name remains Score Studio; this repository is named `musical`.
+Audio-to-score web application and a Flutter on-device music studio integration. The app name remains Score Studio; this repository is named `musical`.
 
 Original project folder: `E:\ScoreStudio`.
 
@@ -12,7 +12,7 @@ For Flutter, install the Flutter SDK, then run `flutter pub get`, `flutter analy
 
 ## Mobile direction and current limits
 
-The goal is on-device music generation/transcription, audio editing and export, retaining the orange dot-matrix musicians and existing visual style. See [mobile feasibility notes](docs/mobile-inference.md). GGUF model execution, incremental generated audio, and the Flutter editor are **not implemented yet**. No low-end phone compatibility or generation speed is claimed.
+The goal is on-device music generation/transcription, audio editing and export, retaining the orange dot-matrix musicians and existing visual style. See [mobile feasibility notes](docs/mobile-inference.md). Flutter now calls the pinned audio.cpp C API for YuE2 and SheetSage2 GGUF execution, with verified downloads and file export. Actual inference with model weights and Apple device builds still require validation. Incremental generated audio and the Flutter editor are not implemented. No low-end phone compatibility or generation speed is claimed.
 
 Model weights are downloaded separately. YuE2 and SheetSage2 have their own noncommercial licenses; this repository does not relicense them. Soundfont attribution is in `outputs/score-studio/public/soundfonts/ATTRIBUTION.md`; font notices are in `outputs/score-studio/public/fonts/README.md`; bundled abcjs notices accompany the assets.
 
@@ -32,19 +32,8 @@ Local environment settings are excluded from GitHub. Create your own `.env.local
 Live web app: https://reubencf-score-studio.hf.space/
 API: https://reubencf-score-studio-api.hf.space/
 
-## Flutter starter
+## Flutter native studio
 
-`flutter_app` contains a separate Flutter app scaffold for Android, iOS, web, and Windows.
-It includes a branded landing screen and automatic device light/dark theme.
-Audio upload, Hugging Face authentication, transcription, and score playback are not yet ported to Flutter.
+`flutter_app` includes model downloads, style/lyrics generation, recording transcription, local result playback/export, device light/dark theme, and the dot-matrix musicians. Follow [Flutter setup](flutter_app/README.md) and [Apple native build instructions](flutter_app/native/README.md). A normal Flutter build alone does not bundle the audio runtime. Browser builds show a native-app notice.
 
-From `E:\ScoreStudio\flutter_app`:
-
-```powershell
-& E:\flutter\bin\flutter.bat run -d chrome
-& E:\flutter\bin\flutter.bat analyze
-& E:\flutter\bin\flutter.bat test
-```
-
-Android and Windows builds need their platform toolchains. iOS builds require macOS and Xcode.
-Dependencies and build caches from the existing project were excluded from the copy; source files and assets are retained.
+The integration prioritizes iOS/macOS. Android native packaging is pending. Neither phone performance nor universal low-end phone support has been validated.

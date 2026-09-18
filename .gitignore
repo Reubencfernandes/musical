@@ -19,3 +19,6 @@ local.properties
 *.gguf
 *.safetensors
 .DS_Store
+flutter_app/native/external/
+flutter_app/native/build-*/
+flutter_app/native/artifacts/
