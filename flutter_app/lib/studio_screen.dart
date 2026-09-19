@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'inference/inference_service.dart';
 import 'inference/model_store.dart';
+import 'inference/background_model_store.dart';
 import 'inference/native_api.dart';
 import 'widgets/musician.dart';
 import 'imports/youtube_import.dart';
@@ -20,7 +21,10 @@ class StudioScreen extends StatefulWidget {
   State<StudioScreen> createState() => _StudioScreenState();
 }
 
-class _StudioScreenState extends State<StudioScreen> {
+class _StudioScreenState extends State<StudioScreen>
+    with WidgetsBindingObserver {
+  // Keep the transfer owner alive when the studio route is disposed/recreated.
+  static ModelStore? _appStore;
   final engine = InferenceService(), player = AudioPlayer();
   final style = TextEditingController(),
       lyrics = TextEditingController(),
@@ -33,6 +37,7 @@ class _StudioScreenState extends State<StudioScreen> {
   StreamSubscription<Map<String, dynamic>>? subscription;
   List<ModelPackage> packages = [];
   final installed = <String>{};
+  final downloads = <String, ModelDownloadSnapshot>{};
   ModelStore? store;
   Directory? documents;
   String family = 'yue2',
@@ -42,7 +47,7 @@ class _StudioScreenState extends State<StudioScreen> {
       backend = Platform.isIOS || Platform.isMacOS ? 'metal' : 'cpu';
   String? inputAudio, song;
   List<String> files = [];
-  bool busy = false, downloading = false, stopping = false;
+  bool busy = false, downloading = false, stopping = false, pausing = false;
   double downloadProgress = 0;
   final watch = Stopwatch();
   Timer? elapsedTimer;
@@ -50,8 +55,34 @@ class _StudioScreenState extends State<StudioScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     subscription = engine.events.stream.listen(_event);
     _setup();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_reconnectDownloads());
+  }
+
+  Future<void> _reconnectDownloads() async {
+    try {
+      await store?.reconnect();
+      if (!mounted || downloading || store == null) return;
+      for (final model in packages) {
+        if (installed.contains(model.id)) continue;
+        final saved = await store!.snapshot(model);
+        if (!mounted) return;
+        setState(() => downloads[model.id] = saved);
+        if (saved.state == ModelDownloadState.active ||
+            saved.state == ModelDownloadState.verifying) {
+          setState(() => family = model.id);
+          await _download(model, restoring: true);
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
   }
 
   Future<void> _setup() async {
@@ -62,10 +93,23 @@ class _StudioScreenState extends State<StudioScreen> {
                   as List)
               .map((p) => ModelPackage(p))
               .toList();
-      final storage = ModelStore(Directory('${root.path}/models'));
+      final storage = _appStore ??= Platform.isIOS
+          ? BackgroundModelStore(Directory('${root.path}/models'))
+          : ModelStore(Directory('${root.path}/models'));
       final ready = <String>{};
+      final saved = <String, ModelDownloadSnapshot>{};
+      ModelPackage? restore;
       for (final item in loaded) {
-        if (await storage.installed(item)) ready.add(item.id);
+        if (await storage.installed(item)) {
+          ready.add(item.id);
+        } else {
+          final state = await storage.snapshot(item);
+          saved[item.id] = state;
+          if (state.state == ModelDownloadState.active ||
+              state.state == ModelDownloadState.verifying) {
+            restore ??= item;
+          }
+        }
       }
       if (mounted) {
         setState(() {
@@ -73,7 +117,10 @@ class _StudioScreenState extends State<StudioScreen> {
           packages = loaded;
           store = storage;
           installed.addAll(ready);
+          downloads.addAll(saved);
+          if (restore != null) family = restore.id;
         });
+        if (restore != null) unawaited(_download(restore, restoring: true));
       }
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -125,14 +172,16 @@ class _StudioScreenState extends State<StudioScreen> {
     }
   }
 
-  Future<void> _download(ModelPackage model) async {
+  Future<void> _download(ModelPackage model, {bool restoring = false}) async {
+    if (downloading) return;
     setState(() {
       downloading = true;
       error = '';
-      downloadProgress = 0;
+      downloadProgress = (downloads[model.id]?.received ?? 0) / model.size;
+      stage = restoring ? 'Restoring download…' : 'Preparing download…';
     });
     try {
-      if (!NativeApi.open().families().contains(model.id)) {
+      if (!restoring && !NativeApi.open().families().contains(model.id)) {
         throw StateError(
           'Rebuild the native engine with ${model.name} enabled.',
         );
@@ -148,12 +197,58 @@ class _StudioScreenState extends State<StudioScreen> {
       if (mounted) setState(() => installed.add(model.id));
     } on DownloadCancelled {
       if (mounted) {
-        setState(() => stage = 'Download paused. Tap Download to resume.');
+        setState(() => stage = 'Download paused. Saved data will be reused.');
       }
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => downloading = false);
+      try {
+        final saved = await store!.snapshot(model);
+        if (mounted) setState(() => downloads[model.id] = saved);
+      } catch (e) {
+        if (mounted) setState(() => error = e.toString());
+      }
+      if (mounted) {
+        setState(() {
+          downloading = false;
+          pausing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _pauseDownload() async {
+    setState(() => pausing = true);
+    try {
+      if (!await store!.pause() && mounted) {
+        setState(
+          () => error =
+              'The server could not pause every file yet. Try again in a moment.',
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => pausing = false);
+    }
+  }
+
+  Future<void> _discardDownload(ModelPackage model) async {
+    setState(() => pausing = true);
+    try {
+      await store!.discard(model);
+      final saved = await store!.snapshot(model);
+      if (mounted) {
+        setState(() {
+          downloads[model.id] = saved;
+          stage = 'Unfinished download removed. Completed files kept.';
+          error = '';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => pausing = false);
     }
   }
 
@@ -293,7 +388,8 @@ class _StudioScreenState extends State<StudioScreen> {
 
   @override
   void dispose() {
-    store?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    if (!(store?.supportsBackground ?? false)) store?.cancel();
     youtubeImporter.cancel();
     youtube.dispose();
     if (engine.busy) unawaited(engine.cancel());
@@ -394,14 +490,44 @@ class _StudioScreenState extends State<StudioScreen> {
                               LinearProgressIndicator(value: downloadProgress),
                               Text(stage),
                               TextButton(
-                                onPressed: () => store?.cancel(),
-                                child: const Text('Pause download'),
+                                onPressed: pausing ? null : _pauseDownload,
+                                child: Text(
+                                  pausing ? 'Pausing…' : 'Pause download',
+                                ),
                               ),
-                            ] else if (!installed.contains(family))
+                              if (store?.supportsBackground ?? false)
+                                const Text(
+                                  'You can lock your phone or switch apps. Reopen the app after a force-quit to resume.',
+                                ),
+                            ] else if (!installed.contains(family)) ...[
+                              if (downloads[family]?.state ==
+                                  ModelDownloadState.paused)
+                                Text(
+                                  '${((downloads[family]?.received ?? 0) / 1e9).toStringAsFixed(2)} GB saved · paused or interrupted',
+                                ),
                               FilledButton.tonal(
-                                onPressed: () => _download(selected),
-                                child: const Text('Download model'),
+                                onPressed: pausing
+                                    ? null
+                                    : () => _download(selected),
+                                child: Text(
+                                  downloads[family] != null &&
+                                          downloads[family]!.state !=
+                                              ModelDownloadState.none
+                                      ? 'Resume download'
+                                      : 'Download model',
+                                ),
                               ),
+                              if (downloads[family]?.state ==
+                                  ModelDownloadState.paused)
+                                TextButton(
+                                  onPressed: pausing
+                                      ? null
+                                      : () => _discardDownload(selected),
+                                  child: const Text(
+                                    'Discard unfinished download',
+                                  ),
+                                ),
+                            ],
                           ],
                         ),
                       ),

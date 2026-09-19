@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 
 class ModelFile {
@@ -25,11 +26,21 @@ class ModelPackage {
 
 class DownloadCancelled implements Exception {}
 
+enum ModelDownloadState { none, active, paused, verifying }
+
+class ModelDownloadSnapshot {
+  final ModelDownloadState state;
+  final int received;
+  const ModelDownloadSnapshot(this.state, this.received);
+}
+
 class ModelStore {
   final Directory root;
   HttpClient? _client;
   bool _cancelled = false;
   ModelStore(this.root);
+  bool get supportsBackground => false;
+  Future<void> reconnect() async {}
   Directory directory(ModelPackage model) =>
       Directory('${root.path}/${model.id}/${model.revision}');
   Future<bool> installed(ModelPackage model) async {
@@ -47,6 +58,35 @@ class ModelStore {
   void cancel() {
     _cancelled = true;
     _client?.close(force: true);
+  }
+
+  Future<bool> pause() async {
+    cancel();
+    return true;
+  }
+
+  Future<ModelDownloadSnapshot> snapshot(ModelPackage model) async {
+    var bytes = 0;
+    for (final spec in model.files) {
+      final path = '${directory(model).path}/${spec.name}';
+      for (final suffix in ['', '.part']) {
+        final file = File('$path$suffix');
+        if (await file.exists()) bytes += await file.length();
+      }
+    }
+    return ModelDownloadSnapshot(
+      bytes > 0 ? ModelDownloadState.paused : ModelDownloadState.none,
+      bytes.clamp(0, model.size),
+    );
+  }
+
+  /// Discard only unfinished transfers, keeping already verified model files.
+  Future<void> discard(ModelPackage model) async {
+    if (_client != null) throw StateError('Pause the download first.');
+    for (final spec in model.files) {
+      final partial = File('${directory(model).path}/${spec.name}.part');
+      if (await partial.exists()) await partial.delete();
+    }
   }
 
   Future<void> install(
@@ -68,7 +108,9 @@ class ModelStore {
         await target.parent.create(recursive: true);
         if (await target.exists() &&
             await target.length() == spec.size &&
-            await _hash(target) == spec.digest) {
+            await hashModelFile(target) == spec.digest) {
+          final stalePartial = File('${target.path}.part');
+          if (await stalePartial.exists()) await stalePartial.delete();
           finished += spec.size;
           continue;
         }
@@ -125,7 +167,7 @@ class ModelStore {
             'Download interrupted. Tap download to resume.',
           );
         }
-        if (await _hash(partial) != spec.digest) {
+        if (await hashModelFile(partial) != spec.digest) {
           await partial.delete();
           throw const FormatException(
             'Model checksum failed. Please download again.',
@@ -149,7 +191,9 @@ class ModelStore {
       _client = null;
     }
   }
-
-  Future<String> _hash(File file) async =>
-      (await sha256.bind(file.openRead()).first).toString();
 }
+
+/// Hash multi-GB weights off the UI isolate, without reading them into memory.
+Future<String> hashModelFile(File file) => Isolate.run(
+  () async => (await sha256.bind(file.openRead()).first).toString(),
+);

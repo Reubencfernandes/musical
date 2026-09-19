@@ -8,6 +8,16 @@ Install Flutter and full Xcode. Follow [native build instructions](native/README
 
 Generation produces a WAV that can be played, scrubbed and shared to another app. Transcription exports ABC notation and event data; the notation can condition another generation. The Flutter app does not yet render/edit staff notation or offer a multitrack editor. The existing web application remains separate.
 
+## Model downloads on iPhone
+
+iOS model downloads use native background URLSession transfers through `background_downloader` 9.5.5. All files in a model package are queued before waiting for completion, so locking the phone, switching apps, or leaving the studio screen does not cancel the transfer. Pause saves native resume data; Resume reconnects to the same task. On reopening, active transfers are reattached and completed files are verified before enabling inference. Explicitly paused downloads stay paused.
+
+The download card shows saved progress and offers **Discard unfinished download**. Discard cancels the transfer and removes app-owned partial/staging files while keeping completed model files. Successful installation keeps one verified copy of each file; corrupt downloads are removed. Partial `.part` files from older builds are reused with HTTP Range requests. Checksum verification runs outside the UI isolate and may finish when the app returns to the foreground.
+
+Force-quitting by swiping the app away is an iOS limitation: transfers may stop until the app is reopened. Resume depends on server support and the operating system retaining its temporary transfer data; if that data is unavailable, the affected file may need to restart. Completed files are reused. See [Apple's background transfer behavior](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/background(withidentifier:)). Background inference is separate and is not implemented by this download change.
+
+Validation: automated tests cover queue handoff, reconnecting without duplicate tasks, pause/restart/resume, legacy partial migration, checksum rejection, discard cleanup, and interrupted file assembly. An unsigned iOS release build compiles with the native plugin. Lock/unlock, prolonged network loss, and force-quit recovery still require physical-iPhone testing; these changes are not included in the previously uploaded build 1.
+
 The orange musician animation uses fixed dot positions and smoothly changing radii, with a random saxophone, guitar, piano or drums performer. The theme follows the device.
 
 ## Checks
@@ -20,7 +30,7 @@ flutter build web
 dart run bin/native_smoke.dart /absolute/path/to/Audiocpp.framework/Audiocpp
 ```
 
-Web builds show a native-app notice; browser builds cannot load this Dart FFI engine. Android native packaging is not implemented. Apple framework packaging is provided but needs Xcode/device validation. Windows native compilation and ABI smoke checks do not establish phone compatibility.
+Web builds show a native-app notice; browser builds cannot load this Dart FFI engine. Android native packaging is not implemented. iOS release packaging compiles with the native framework and downloader; physical-device inference and background lifecycle validation remain outstanding. Windows native compilation and ABI smoke checks do not establish phone compatibility.
 
 Both upstream model adapters currently return complete offline results. Stage messages and the UI remain responsive, but playable audio chunks and immediate cancellation during native execution are not supported. A stop request waits for the next safe boundary. No real-model generation, phone memory fit or generation speed is certified by the automated tests. See [validation notes](../docs/mobile-inference.md).
 
