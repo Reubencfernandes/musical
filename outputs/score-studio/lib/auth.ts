@@ -32,7 +32,10 @@ export function appOrigin(){
  return new URL(configured||'http://localhost:3000').origin;
 }
 export function cookieOptions(maxAge:number){return {httpOnly:true,secure:appOrigin().startsWith('https:'),sameSite:'lax' as const,path:'/',maxAge};}
+/** The desktop app has no accounts: models run on this computer, not on a user's GPU allowance. */
+const LOCAL_SESSION:Session={token:'',expires:Number.MAX_SAFE_INTEGER,user:{id:'local',name:'This computer'}};
 export async function session(){
+ if(process.env.SCORE_BACKEND==='local')return LOCAL_SESSION;
  const value=unseal<Session>((await cookies()).get(SESSION_COOKIE)?.value);
  return value&&typeof value.token==='string'&&value.expires>Date.now()&&value.user?.id?value:null;
 }

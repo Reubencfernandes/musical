@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'audio_download.dart';
 
 String youtubeVideoId(String value) {
   final uri = Uri.tryParse(value.trim());
@@ -75,7 +76,7 @@ class DirectYoutubeSource implements YoutubeSource {
     if (!await messages.moveNext()) throw StateError('YouTube worker stopped.');
     final first = messages.current;
     if (first is! Map || first['type'] != 'ready') {
-      throw StateError('YouTube did not provide audio.');
+      _throwWorkerError(first, 'YouTube did not provide audio.');
     }
     final ack = first['ack'] as SendPort;
     Stream<List<int>> chunks() async* {
@@ -87,7 +88,7 @@ class DirectYoutubeSource implements YoutubeSource {
         final message = messages.current;
         if (message is Map && message['type'] == 'done') return;
         if (message is! Map || message['bytes'] == null) {
-          throw StateError('YouTube download failed.');
+          _throwWorkerError(message, 'YouTube download failed.');
         }
         yield List<int>.from(message['bytes']);
       }
@@ -129,8 +130,16 @@ Future<void> _youtubeWorker(List<dynamic> args) async {
       if (!await ack.moveNext()) return;
     }
     reply.send({'type': 'done'});
-  } catch (_) {
-    reply.send({'type': 'error'});
+  } catch (error) {
+    reply.send({
+      'type': 'error',
+      'message': error is FormatException
+          ? error.message
+          : error is StateError
+          ? error.message
+          : error.toString(),
+      'format': error is FormatException,
+    });
   } finally {
     source.close();
     await ack.cancel();
@@ -138,47 +147,139 @@ Future<void> _youtubeWorker(List<dynamic> args) async {
   }
 }
 
+Never _throwWorkerError(dynamic message, String fallback) {
+  if (message is Map && message['type'] == 'error') {
+    final detail = message['message'] as String? ?? fallback;
+    if (message['format'] == true) throw FormatException(detail);
+    throw StateError(detail);
+  }
+  throw StateError(fallback);
+}
+
 class _YoutubeNetworkSource implements YoutubeSource {
-  final client = YoutubeExplode();
+  YoutubeExplode? _client;
+  HttpClient? _downloadClient;
+
   @override
   Future<YoutubeAudio> open(String id) async {
-    final video = await client.videos.get(id);
-    if (video.isLive || video.duration == null) {
-      throw const FormatException(
-        'Choose a finished video instead of a live stream.',
-      );
-    }
-    if (video.duration! > const Duration(minutes: 10)) {
-      throw const FormatException('Choose a video up to 10 minutes long.');
-    }
-    // Explicit clients avoid a desktop JavaScript process on iOS. Streams
-    // requiring unavailable signature challenges fail with the upload fallback.
-    final manifest = await client.videos.streams.getManifest(
-      id,
-      ytClients: [YoutubeApiClient.androidSdkless],
-    );
-    final tracks =
-        manifest.audioOnly.where((s) => s.container.name == 'mp4').toList()
-          ..sort(
-            (a, b) =>
-                b.bitrate.bitsPerSecond.compareTo(a.bitrate.bitsPerSecond),
+    // A manifest can succeed while its CDN stream stalls. Try each client
+    // separately and require actual bytes before committing to its track.
+    final failures = <String>[];
+    for (final apiClient in [
+      YoutubeApiClient.ios,
+      YoutubeApiClient.androidVr,
+      YoutubeApiClient.androidSdkless,
+    ]) {
+      final client = YoutubeExplode();
+      _client = client;
+      final http = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+      _downloadClient = http;
+      StreamIterator<List<int>>? iterator;
+      var phase = 'video details';
+      try {
+        final video = await client.videos
+            .get(id)
+            .timeout(const Duration(seconds: 10));
+        if (video.isLive || video.duration == null) {
+          throw const FormatException(
+            'Choose a finished video instead of a live stream.',
           );
-    if (tracks.isEmpty) {
-      throw const FormatException(
-        'YouTube did not offer a compatible audio track. Upload the audio file instead.',
-      );
+        }
+        if (video.duration! > const Duration(minutes: 10)) {
+          throw const FormatException('Choose a video up to 10 minutes long.');
+        }
+        phase = 'stream lookup';
+        final manifest = await client.videos.streams
+            .getManifest(id, ytClients: [apiClient], requireWatchPage: false)
+            .timeout(const Duration(seconds: 20));
+        final tracks =
+            manifest.audioOnly
+                .where(
+                  (s) =>
+                      s.container.name == 'mp4' &&
+                      s.size.totalBytes > 0 &&
+                      s.size.totalBytes <= 100 * 1024 * 1024,
+                )
+                .toList()
+              ..sort(
+                (a, b) =>
+                    a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond),
+              );
+        if (tracks.isEmpty) {
+          throw StateError('No compatible MP4 audio track was offered.');
+        }
+        final track = tracks.first;
+        phase = 'audio download';
+        final chunks = StreamIterator(
+          downloadAudioRanges(
+            http,
+            track.url,
+            track.size.totalBytes,
+            // Mobile stream URLs may allow only one request per manifest.
+            // Stream that response with backpressure instead of reopening it.
+            chunkSize: track.size.totalBytes,
+            userAgent:
+                apiClient.payload['context']['client']['userAgent']
+                    as String? ??
+                'Mozilla/5.0',
+          ),
+        );
+        iterator = chunks;
+        if (!await chunks.moveNext().timeout(const Duration(seconds: 8))) {
+          throw StateError('YouTube returned an empty audio stream.');
+        }
+        Stream<List<int>> bytes() async* {
+          try {
+            yield chunks.current;
+            while (await chunks.moveNext()) {
+              yield chunks.current;
+            }
+          } finally {
+            client.close();
+            http.close(force: true);
+            await chunks.cancel();
+          }
+        }
+
+        return YoutubeAudio(
+          video.title,
+          video.duration!,
+          track.size.totalBytes,
+          bytes(),
+        );
+      } on FormatException {
+        client.close();
+        http.close(force: true);
+        rethrow;
+      } catch (error) {
+        failures.add(
+          '${apiClient.payload['context']['client']['clientName']} ($phase): $error',
+        );
+        client.close();
+        http.close(force: true);
+        // The whole network worker is terminated by close(); never wait on a
+        // stalled upstream async generator before trying the next client.
+        if (iterator != null) unawaited(iterator.cancel());
+      }
     }
-    final track = tracks.first;
-    return YoutubeAudio(
-      video.title,
-      video.duration!,
-      track.size.totalBytes,
-      client.videos.streams.get(track),
+    // For many videos YouTube serves only the opening seconds of a stream
+    // unless the request carries a browser attestation token, which this app
+    // cannot produce. Enforcement is per video, so another link may work but
+    // retrying the same one will not.
+    final blocked = failures.any(
+      (f) => f.contains('403') || f.contains('not a bot'),
+    );
+    throw StateError(
+      '${blocked ? 'YouTube blocks app downloads for this video (it does this for many, but not all, videos). Try another video, or save the audio to Files and use Upload.' : 'YouTube audio was unavailable. Upload a recording or try another video.'} '
+      'Details: ${failures.join('; ')}',
     );
   }
 
   @override
-  void close() => client.close();
+  void close() {
+    _client?.close();
+    _downloadClient?.close(force: true);
+  }
 }
 
 class ImportCancelled implements Exception {}
@@ -197,15 +298,20 @@ class YoutubeImporter {
   final Duration downloadTimeout;
   YoutubeSource? _source;
   bool _cancelled = false, busy = false;
+  Completer<YoutubeAudio>? _cancelLookup;
   YoutubeImporter({
     YoutubeSource Function()? sourceFactory,
-    this.lookupTimeout = const Duration(seconds: 60),
+    this.lookupTimeout = const Duration(seconds: 90),
     this.downloadTimeout = const Duration(seconds: 30),
   }) : sourceFactory = sourceFactory ?? DirectYoutubeSource.new;
 
   void cancel() {
     _cancelled = true;
     _source?.close();
+    final lookup = _cancelLookup;
+    if (lookup != null && !lookup.isCompleted) {
+      lookup.completeError(ImportCancelled());
+    }
   }
 
   void _check() {
@@ -227,7 +333,13 @@ class YoutubeImporter {
     try {
       _source = sourceFactory();
       progress('Finding the audio…', null);
-      final audio = await _source!.open(id).timeout(lookupTimeout);
+      final cancellation = Completer<YoutubeAudio>();
+      _cancelLookup = cancellation;
+      final audio = await Future.any([
+        _source!.open(id),
+        cancellation.future,
+      ]).timeout(lookupTimeout);
+      _cancelLookup = null;
       _check();
       const limit = 100 * 1024 * 1024;
       if (audio.duration > const Duration(minutes: 10) ||
@@ -241,7 +353,7 @@ class YoutubeImporter {
       temporary = await root.createTemp('youtube-');
       final compressed = File('${temporary.path}/source.m4a');
       final output = '${temporary.path}/audio.wav';
-      final sink = compressed.openWrite();
+      final sink = await compressed.open(mode: FileMode.write);
       int received = 0;
       try {
         progress('Downloading audio…', 0);
@@ -264,11 +376,11 @@ class YoutubeImporter {
               'The audio download exceeded its expected size.',
             );
           }
-          sink.add(chunk);
+          // Await disk writes to keep worker acknowledgements bounded.
+          await sink.writeFrom(chunk);
           progress('Downloading audio…', received / audio.size);
         }
       } finally {
-        await sink.flush();
         await sink.close();
       }
       _check();
@@ -278,7 +390,14 @@ class YoutubeImporter {
         );
       }
       progress('Preparing the first three minutes…', null);
-      await convert(compressed.path, output);
+      try {
+        await convert(compressed.path, output);
+      } catch (error) {
+        if (error is FormatException || error is FileSystemException) rethrow;
+        throw FormatException(
+          'Audio downloaded, but conversion failed: $error',
+        );
+      }
       _check();
       if (!await File(output).exists() || await File(output).length() <= 44) {
         throw const FormatException('The video did not produce usable audio.');
@@ -293,12 +412,20 @@ class YoutubeImporter {
     } catch (error) {
       if (_cancelled) throw ImportCancelled();
       if (error is FormatException || error is FileSystemException) rethrow;
+      if (error is TimeoutException) {
+        throw StateError(
+          'YouTube timed out while finding or downloading audio. '
+          'Check your connection and try again, or upload a recording.',
+        );
+      }
+      if (error is StateError) rethrow;
       throw StateError(
         'YouTube could not provide this audio. It may be unavailable or blocking downloads. Try another video or upload a recording.',
       );
     } finally {
       _source?.close();
       _source = null;
+      _cancelLookup = null;
       busy = false;
       if (!success && temporary != null && await temporary.exists()) {
         await temporary.delete(recursive: true);

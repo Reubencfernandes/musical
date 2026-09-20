@@ -5,6 +5,20 @@ import 'package:score_studio/inference/inference_service.dart';
 import 'package:score_studio/inference/wav.dart';
 
 void main() {
+  test('WAV duration limit rejects samples before float conversion', () {
+    final wav = Uint8List(44 + 16000 * 2)..setAll(0, wavHeader(16000, 8000, 1));
+    expect(
+      () => WavAudio.decode(wav, maxDuration: const Duration(seconds: 1)),
+      throwsFormatException,
+    );
+    expect(
+      WavAudio.decode(
+        wav,
+        maxDuration: const Duration(seconds: 2),
+      ).samples.length,
+      16000,
+    );
+  });
   test('PCM decoding preserves channels, sample rate and signed samples', () {
     final wav = Uint8List(52)..setAll(0, wavHeader(2, 48000, 2));
     final view = ByteData.sublistView(wav);

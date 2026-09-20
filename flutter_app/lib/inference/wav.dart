@@ -6,7 +6,7 @@ class WavAudio {
   final int sampleRate, channels;
   WavAudio(this.samples, this.sampleRate, this.channels);
 
-  static WavAudio decode(Uint8List bytes) {
+  static WavAudio decode(Uint8List bytes, {Duration? maxDuration}) {
     final data = ByteData.sublistView(bytes);
     String tag(int at) => ascii.decode(bytes.sublist(at, at + 4));
     if (bytes.length < 44 || tag(0) != 'RIFF' || tag(8) != 'WAVE') {
@@ -44,6 +44,12 @@ class WavAudio {
     final stride = bits ~/ 8;
     if (pcm.length % (stride * channels) != 0 || pcm.isEmpty) {
       throw const FormatException('Invalid WAV samples.');
+    }
+    // Reject oversized recordings before allocating a second, float32 copy.
+    if (maxDuration != null &&
+        pcm.length / (stride * channels * rate) >
+            maxDuration.inMicroseconds / Duration.microsecondsPerSecond) {
+      throw const FormatException('Select up to three minutes of audio.');
     }
     final values = Float32List(pcm.length ~/ stride),
         raw = ByteData.sublistView(pcm);

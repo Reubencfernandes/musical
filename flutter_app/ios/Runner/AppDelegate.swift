@@ -16,6 +16,11 @@ import AVFoundation
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ScoreStudioAudio") else { return }
     let channel = FlutterMethodChannel(name: "score_studio/audio", binaryMessenger: registrar.messenger())
     channel.setMethodCallHandler { call, result in
+      if call.method == "keepAwake", let enabled = call.arguments as? Bool {
+        UIApplication.shared.isIdleTimerDisabled = enabled
+        result(nil)
+        return
+      }
       guard call.method == "decode", let args = call.arguments as? [String: Any],
             let path = args["path"] as? String, let output = args["output"] as? String else {
         result(FlutterMethodNotImplemented); return
@@ -28,10 +33,9 @@ import AVFoundation
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let input = try AVAudioFile(forReading: url)
             let format = input.processingFormat
-            let excerpt = args["excerpt"] as? Bool ?? false
-            let duration = Double(input.length) / format.sampleRate
-            guard format.channelCount <= 2, duration > 0, duration <= (excerpt ? 600 : 180) else {
-              throw NSError(domain: "ScoreStudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a mono or stereo recording up to three minutes long."])
+            // Longer recordings are accepted; the read loop keeps the first three minutes.
+            guard format.channelCount <= 2, input.length > 0 else {
+              throw NSError(domain: "ScoreStudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a mono or stereo recording."])
             }
             let settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM,
               AVSampleRateKey: format.sampleRate, AVNumberOfChannelsKey: format.channelCount,

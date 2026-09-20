@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:share_plus/share_plus.dart';
 import 'inference/inference_service.dart';
 import 'inference/model_store.dart';
@@ -14,6 +15,7 @@ import 'inference/native_api.dart';
 import 'widgets/musician.dart';
 import 'imports/youtube_import.dart';
 import 'imports/audio_converter.dart';
+import 'score/score_page.dart';
 
 class StudioScreen extends StatefulWidget {
   const StudioScreen({super.key});
@@ -51,6 +53,10 @@ class _StudioScreenState extends State<StudioScreen>
   double downloadProgress = 0;
   final watch = Stopwatch();
   Timer? elapsedTimer;
+  final recorder = AudioRecorder(), recordWatch = Stopwatch();
+  Timer? recordTimer;
+  bool recording = false;
+  static const maxRecording = Duration(minutes: 3);
 
   @override
   void initState() {
@@ -166,11 +172,110 @@ class _StudioScreenState extends State<StudioScreen>
           song = audio;
           score = text;
         });
+        if (text.isNotEmpty && audio == null) _openScore();
       }
     } catch (e) {
       if (mounted) setState(() => error = 'Could not open the result: $e');
     }
   }
+
+  void _openScore() {
+    if (score.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScorePage(
+          abc: score,
+          title: inputTitle.isEmpty ? 'Your score' : inputTitle,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleRecording() async {
+    if (recording) return _finishRecording();
+    if (documents == null || busy || importing || downloading) return;
+    try {
+      if (!await recorder.hasPermission()) {
+        setState(
+          () => error =
+              'Allow microphone access for Score Studio in Settings to record.',
+        );
+        return;
+      }
+      await player.stop();
+      await recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 44100,
+          numChannels: 1,
+        ),
+        path:
+            '${documents!.path}/recording-${DateTime.now().microsecondsSinceEpoch}.wav',
+      );
+      recordWatch
+        ..reset()
+        ..start();
+      recordTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+        if (recordWatch.elapsed >= maxRecording) {
+          unawaited(_finishRecording());
+        } else if (mounted) {
+          setState(() {});
+        }
+      });
+      await _keepAwake(true);
+      if (mounted) {
+        setState(() {
+          recording = true;
+          error = '';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = 'Could not start recording: $e');
+    }
+  }
+
+  Future<void> _finishRecording() async {
+    if (!recording) return;
+    recording = false;
+    recordTimer?.cancel();
+    recordWatch.stop();
+    try {
+      final raw = await recorder.stop();
+      await _keepAwake(false);
+      if (raw == null) throw StateError('Nothing was recorded.');
+      if (recordWatch.elapsed < const Duration(seconds: 2)) {
+        await File(raw).delete();
+        throw StateError('Record for at least a couple of seconds.');
+      }
+      var selected = raw;
+      if (Platform.isIOS) {
+        // Same importer as picked files, so the model always sees plain PCM.
+        selected =
+            await const MethodChannel(
+              'score_studio/audio',
+            ).invokeMethod<String>('decode', {
+              'path': raw,
+              'output':
+                  '${documents!.path}/import-${DateTime.now().microsecondsSinceEpoch}.wav',
+            }) ??
+            raw;
+        if (selected != raw) await File(raw).delete();
+      }
+      if (mounted) {
+        setState(() {
+          inputAudio = selected;
+          inputTitle = 'My recording · ${_clock(recordWatch.elapsed)}';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() {});
+    }
+  }
+
+  static String _clock(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 
   Future<void> _download(ModelPackage model, {bool restoring = false}) async {
     if (downloading) return;
@@ -323,7 +428,9 @@ class _StudioScreenState extends State<StudioScreen>
   }
 
   Future<void> _run() async {
-    if (busy || downloading || importing || documents == null) return;
+    if (busy || downloading || importing || recording || documents == null) {
+      return;
+    }
     if (family == 'yue2' &&
         (style.text.trim().isEmpty || lyrics.text.trim().isEmpty)) {
       setState(() => error = 'Add a style and lyrics first.');
@@ -356,6 +463,7 @@ class _StudioScreenState extends State<StudioScreen>
       if (!await store!.installed(model)) {
         throw StateError('Download the model files first.');
       }
+      await _keepAwake(true);
       await engine.run({
         'family': family,
         'model': family == 'sheetsage2'
@@ -375,6 +483,18 @@ class _StudioScreenState extends State<StudioScreen>
       watch.stop();
       elapsedTimer?.cancel();
       if (mounted) setState(() => busy = false);
+      await _keepAwake(false);
+    }
+  }
+
+  Future<void> _keepAwake(bool enabled) async {
+    if (!Platform.isIOS) return;
+    try {
+      await const MethodChannel(
+        'score_studio/audio',
+      ).invokeMethod<void>('keepAwake', enabled);
+    } on PlatformException catch (e) {
+      debugPrint('Unable to change idle timer: $e');
     }
   }
 
@@ -395,6 +515,8 @@ class _StudioScreenState extends State<StudioScreen>
     if (engine.busy) unawaited(engine.cancel());
     subscription?.cancel();
     elapsedTimer?.cancel();
+    recordTimer?.cancel();
+    unawaited(recorder.dispose());
     player.dispose();
     style.dispose();
     lyrics.dispose();
@@ -570,8 +692,30 @@ class _StudioScreenState extends State<StudioScreen>
                     ),
                   ] else ...[
                     const SizedBox(height: 16),
+                    FilledButton.tonalIcon(
+                      onPressed: documents == null || downloading || importing
+                          ? null
+                          : _toggleRecording,
+                      icon: Icon(recording ? Icons.stop : Icons.mic),
+                      style: recording
+                          ? FilledButton.styleFrom(
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onError,
+                            )
+                          : null,
+                      label: Text(
+                        recording
+                            ? 'Stop · ${_clock(recordWatch.elapsed)} / ${_clock(maxRecording)}'
+                            : 'Record with the microphone',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      onPressed: documents == null || downloading
+                      onPressed: documents == null || downloading || recording
                           ? null
                           : _pickAudio,
                       icon: const Icon(Icons.upload_file),
@@ -582,7 +726,7 @@ class _StudioScreenState extends State<StudioScreen>
                       ),
                     ),
                     const Text(
-                      'Up to 3 minutes. iPhone accepts WAV, MP3 and M4A; desktop currently accepts PCM WAV.',
+                      'iPhone accepts WAV, MP3 and M4A; longer recordings use the first 3 minutes. Desktop currently accepts 16-bit PCM WAV.',
                     ),
                   ],
                   if (family == 'sheetsage2') ...[
@@ -603,7 +747,7 @@ class _StudioScreenState extends State<StudioScreen>
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      onPressed: documents == null || downloading
+                      onPressed: documents == null || downloading || recording
                           ? null
                           : _importYoutube,
                       icon: const Icon(Icons.link),
@@ -645,7 +789,8 @@ class _StudioScreenState extends State<StudioScreen>
                     onPressed:
                         selected != null &&
                             installed.contains(family) &&
-                            !downloading
+                            !downloading &&
+                            !recording
                         ? _run
                         : null,
                     icon: const Icon(Icons.auto_awesome),
@@ -654,16 +799,32 @@ class _StudioScreenState extends State<StudioScreen>
                     ),
                   ),
                 ],
-                if (error.isNotEmpty)
+                if (error.isNotEmpty) ...[
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.only(top: 16),
                     child: SelectableText(
-                      error,
+                      errorSummary(error),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                   ),
+                  if (errorDetails(error).isNotEmpty)
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: Text(
+                        'Technical details',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      children: [
+                        SelectableText(
+                          errorDetails(error),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 16),
+                ],
                 if (song != null) ...[
                   const SizedBox(height: 24),
                   StreamBuilder<PlayerState>(
@@ -706,8 +867,16 @@ class _StudioScreenState extends State<StudioScreen>
                 ],
                 if (score.isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const Text('Your score · ABC notation'),
-                  SelectableText(score),
+                  FilledButton.icon(
+                    onPressed: _openScore,
+                    icon: const Icon(Icons.library_music),
+                    label: const Text('Open score and play'),
+                  ),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: const Text('ABC notation (text)'),
+                    children: [SelectableText(score)],
+                  ),
                   TextButton(
                     onPressed: () => setState(() {
                       abc.text = score;
@@ -747,4 +916,19 @@ class _StudioScreenState extends State<StudioScreen>
       ),
     );
   }
+}
+
+/// The sentence a person should read: no Dart exception prefix, no diagnostics.
+String errorSummary(String error) => error
+    .split(' Details: ')
+    .first
+    .replaceFirst(
+      RegExp(r'^(Bad state|Exception|FormatException|Invalid argument\(s\)): '),
+      '',
+    );
+
+/// Diagnostics that follow ' Details: ', kept available but out of the way.
+String errorDetails(String error) {
+  final at = error.indexOf(' Details: ');
+  return at < 0 ? '' : error.substring(at + ' Details: '.length);
 }

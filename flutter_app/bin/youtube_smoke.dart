@@ -15,7 +15,7 @@ Future<void> main(List<String> args) async {
   try {
     final result =
         await YoutubeImporter(
-          lookupTimeout: const Duration(seconds: 15),
+          lookupTimeout: const Duration(seconds: 90),
         ).import(
           args.single,
           root,

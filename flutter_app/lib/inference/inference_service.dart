@@ -7,6 +7,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'native_api.dart';
+import 'runtime_options.dart';
 import 'wav.dart';
 
 class InferenceService {
@@ -20,7 +21,6 @@ class InferenceService {
     }
     busy = true;
     final port = ReceivePort(), done = Completer<void>();
-    _cancelPath = '${input['output']}/cancel';
     final subscription = port.listen((message) {
       if (message == null) {
         if (!done.isCompleted) done.complete();
@@ -37,10 +37,11 @@ class InferenceService {
     });
     try {
       await Directory(input['output']!).create(recursive: true);
-      final cancel = File(_cancelPath!);
+      final cancel = File('${input['output']}/cancel');
       if (await cancel.exists()) {
         await cancel.delete();
       }
+      _cancelPath = cancel.path;
       await Isolate.spawn(
         _worker,
         {'input': input, 'port': port.sendPort, 'cancel': _cancelPath},
@@ -59,7 +60,9 @@ class InferenceService {
   }
 
   Future<void> cancel() async {
-    if (_cancelPath != null) await File(_cancelPath!).writeAsString('cancel');
+    final path = _cancelPath;
+    if (path == null) return;
+    await File(path).writeAsString('cancel');
     // Never kill an isolate inside a blocking native call or free its live handles.
     events.add({
       'type': 'stage',
@@ -99,6 +102,19 @@ void _worker(Map<String, dynamic> args) {
         api.check(api.registryCreate(nullptr, registry));
         final family = input['family']!, config = arena<ModelConfig>();
         config.ref.family = text(family);
+        WavAudio? recordingAudio;
+        if (family == 'sheetsage2') {
+          send('stage', 'Checking your recording…');
+          final recording = File(input['audio']!);
+          if (recording.lengthSync() > 150 * 1024 * 1024) {
+            throw StateError('Select an audio file below 150 MB.');
+          }
+          recordingAudio = WavAudio.decode(
+            recording.readAsBytesSync(),
+            maxDuration: const Duration(minutes: 3),
+          );
+        }
+
         send(
           'stage',
           'Loading ${family == 'yue2' ? 'YuE2' : 'SheetSage2'} from this device…',
@@ -122,20 +138,9 @@ void _worker(Map<String, dynamic> args) {
         if (options == nullptr) {
           throw StateError('Not enough memory for model options.');
         }
-        if (family == 'yue2') {
+        for (final option in runtimeOptions(family).entries) {
           api.check(
-            api.optionsSet(
-              options,
-              text('yue2.model_gguf'),
-              text('yue2-3b-q4_0.gguf'),
-            ),
-          );
-          api.check(
-            api.optionsSet(
-              options,
-              text('yue2.vae_gguf'),
-              text('yue2-vae-f16.gguf'),
-            ),
+            api.optionsSet(options, text(option.key), text(option.value)),
           );
         }
         final backend = arena<BackendConfig>();
@@ -176,18 +181,15 @@ void _worker(Map<String, dynamic> args) {
           if ((input['abc'] ?? '').isNotEmpty) {
             api.check(api.setOption(request, text('abc'), text(input['abc']!)));
           }
+          for (final limit in const ['abc_max_tokens', 'semantic_max_tokens']) {
+            if ((input[limit] ?? '').isNotEmpty) {
+              api.check(
+                api.setOption(request, text(limit), text(input[limit]!)),
+              );
+            }
+          }
         } else {
-          send('stage', 'Reading your recording…');
-          final recording = File(input['audio']!);
-          if (recording.lengthSync() > 150 * 1024 * 1024) {
-            throw StateError('Select an audio file below 150 MB.');
-          }
-          final wav = WavAudio.decode(recording.readAsBytesSync());
-          if (wav.samples.length / wav.channels / wav.sampleRate > 180) {
-            throw StateError(
-              'For this mobile preview, select up to three minutes of audio.',
-            );
-          }
+          final wav = recordingAudio!;
           final samples = calloc<Float>(wav.samples.length);
           try {
             samples.asTypedList(wav.samples.length).setAll(0, wav.samples);
@@ -202,6 +204,7 @@ void _worker(Map<String, dynamic> args) {
             );
           } finally {
             calloc.free(samples);
+            recordingAudio = null;
           }
         }
         checkpoint();
@@ -320,7 +323,6 @@ void _worker(Map<String, dynamic> args) {
         api.registryFree(registry.value);
       }
     });
-    checkpoint();
     if (completed != null) port.send(completed);
   } on _Cancelled {
     send('cancelled', 'Stopped. Any unfinished result was discarded.');

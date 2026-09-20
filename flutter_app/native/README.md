@@ -66,3 +66,43 @@ Use the corresponding `.so`/`.dylib` filename on Linux/macOS. A system without a
 ## Validation before claiming phone support
 
 Run each model with real downloaded weights on the Mac and then the physical iPhone. Check output quality, peak memory, thermal state, elapsed time, app backgrounding, cancellation, and a second job after completion/error. Test airplane mode after downloading. Increase from a short test to full songs only when the device remains stable. A Q4 weight file alone does not ensure the full pipeline fits iOS memory limits.
+
+## iPhone 15 Pro allocation crash (September 2026)
+
+Two physical-device build-2 crash reports showed `EXC_BAD_ACCESS` at address
+`0x10` in `ggml_metal_buffer_is_shared`, called after a failed Metal allocation
+while uploading SheetSage2 encoder weights. This was a native null dereference,
+not a Dart exception. Smaller metadata arenas alone do not repair this path.
+
+CMake runs `patch_runtime.py` against the pinned source. It checks each expected
+source fragment, preserves unrelated local edits, and applies idempotently. The
+patch propagates a null Metal allocation and releases owned host/Metal resources
+on allocation or residency failure. Rebuild and re-embed Audiocpp after this
+change; a Flutter-only rebuild cannot update the native library.
+
+`python3 native/tests/check_metal_allocation.py` compiles the actual patched
+allocator with deterministic allocation stubs and checks failure, shared-buffer
+success, and private-buffer success. It does not establish model memory fit.
+
+`lib/device_probe.dart` is an opt-in device test entry point, separate from the
+normal `lib/main.dart`. It uses five seconds of an existing imported recording
+and the already-installed SheetSage2 model, and saves stage/result events under
+Documents/diagnostics/probe.json. Build it explicitly with `-t
+lib/device_probe.dart`; restore the normal app with `-t lib/main.dart` afterward.
+
+The same patch selects the existing flash-attention module for SheetSage2's
+non-causal Metal encoder and removes its x8 metadata-arena multiplier. CPU
+attention is unchanged. These changes allowed the five-second physical-phone
+probe to complete in 28.5 seconds. The probe can use the full saved recording
+with `--dart-define=PROBE_FULL_AUDIO=true`, or test native YouTube conversion
+with `--dart-define=PROBE_YOUTUBE_URL=<video-url>` when building that entry point.
+The launch environment alternatives exist for developer tooling, but use the
+compile-time flags for reproducible release-device runs.
+
+For long recordings on iOS, the patch also divides the encoder graph across up
+to eight Metal command buffers, with 64 nodes in the main submission. The
+original desktop scheduling produced a GPU recovery error on the 111.16-second
+phone recording; the bounded scheduling completed the same recording in 55.6
+seconds. This is a physical A17 Pro observation, not a guarantee for every
+recording, model, or device. `PROBE_GENERATE=true` tests the separately installed
+YuE2 model using a short original lyric prompt.

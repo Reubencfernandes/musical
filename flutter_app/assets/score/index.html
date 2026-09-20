@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Score</title>
+<style>
+  :root { --bg:#111; --panel:#252628; --track:#353638; --text:#e9e9ea; --muted:#8b9099; --accent:#ff5526; --paper:#fff; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f3f3f4; --panel:#252628; --text:#1a1a1a; --muted:#6a7079; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:15px -apple-system,system-ui,Roboto,sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 12px 8px; }
+  .transport { display:flex; align-items:center; gap:4px; background:var(--panel); border-radius:14px; padding:8px; }
+  button.icon { flex:none; width:40px; height:40px; border:0; border-radius:8px; background:none; color:#cfd0d2; display:grid; place-items:center; }
+  button.icon svg { width:22px; height:22px; fill:currentColor; }
+  button.icon.on { color:var(--accent); }
+  button.icon:disabled { opacity:.4; }
+  #play { color:#fff; }
+  .progress { position:relative; flex:1; min-width:0; height:40px; border-radius:9px; background:var(--track); overflow:hidden; }
+  #fill { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); }
+  .label { position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 11px; color:#fff; font-size:13px; pointer-events:none; font-variant-numeric:tabular-nums; }
+  .label strong { font-weight:500; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #seek { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; }
+  .options { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 4px 0; color:var(--muted); font-size:13px; }
+  .options label { display:flex; align-items:center; gap:6px; }
+  input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+  #status { padding:6px 16px 0; min-height:22px; color:var(--muted); font-size:13px; }
+  #status.error { color:#ff8a70; }
+  main { padding:8px 10px 40px; padding-left:max(10px, env(safe-area-inset-left)); padding-right:max(10px, env(safe-area-inset-right)); }
+  header { padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(12px, env(safe-area-inset-right)); }
+  @media (max-height: 520px) { header { padding-top:6px; padding-bottom:4px; } .options { display:none; } button.icon, .progress { height:36px; } }
+  #paper { color:#16181c; background:var(--paper); border-radius:6px; padding:6px 4px 16px; min-height:200px; }
+  #paper svg { display:block; }
+  .abcjs-note.playing, .abcjs-rest.playing { fill:var(--accent) !important; stroke:var(--accent) !important; }
+  .playing path { fill:var(--accent) !important; }
+  #cursor { stroke:var(--accent); stroke-width:2.5; pointer-events:none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="transport">
+    <button class="icon" id="restart" aria-label="Back to start" disabled><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button class="icon" id="play" aria-label="Play" disabled><svg viewBox="0 0 24 24"><path id="playIcon" d="M7 4v16l13-8z"/></svg></button>
+    <div class="progress">
+      <div id="fill"></div>
+      <div class="label"><span id="elapsed">0:00</span><strong id="title"></strong><span id="remaining">-0:00</span></div>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Position" disabled>
+    </div>
+    <button class="icon" id="loop" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
+  </div>
+  <div class="options">
+    <span>Piano playback follows your score</span>
+    <label><input type="checkbox" id="follow" checked> Follow notes</label>
+  </div>
+</header>
+<div id="status">Preparing your score…</div>
+<main><div id="paper"></div></main>
+
+<script src="abcjs-basic-min.js"></script>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const PLAY = 'M7 4v16l13-8z', PAUSE = 'M6 4h4v16H6zM14 4h4v16h-4z';
+let visual = null, synth = null, timing = null, context = null, keepAlive = null;
+let state = 'idle'; // idle | loading | playing | paused
+let duration = 0, progress = 0, lit = [], cursor = null, generation = 0;
+
+function status(text, isError) {
+  $('status').textContent = text || '';
+  $('status').className = isError ? 'error' : '';
+}
+function clock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function showProgress(p) {
+  progress = Math.min(1, Math.max(0, p));
+  $('fill').style.width = (progress * 100) + '%';
+  $('seek').value = Math.round(progress * 1000);
+  $('elapsed').textContent = clock(progress * duration);
+  $('remaining').textContent = '-' + clock((1 - progress) * duration);
+}
+function setState(next) {
+  state = next;
+  $('playIcon').setAttribute('d', next === 'playing' ? PAUSE : PLAY);
+  $('play').setAttribute('aria-label', next === 'playing' ? 'Pause' : 'Play');
+  $('play').disabled = !visual || next === 'loading';
+  $('restart').disabled = $('seek').disabled = !visual;
+}
+function clearHighlight() {
+  for (const el of lit) el.classList.remove('playing');
+  lit = [];
+}
+function moveCursor(ev) {
+  const svg = document.querySelector('#paper svg');
+  if (!svg) return;
+  if (!cursor || cursor.ownerSVGElement !== svg) {
+    cursor = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    cursor.id = 'cursor';
+    svg.appendChild(cursor);
+  }
+  const x = ev.left - 2;
+  cursor.setAttribute('x1', x); cursor.setAttribute('x2', x);
+  cursor.setAttribute('y1', ev.top); cursor.setAttribute('y2', ev.top + ev.height);
+  if ($('follow').checked) {
+    const box = cursor.getBoundingClientRect(), head = document.querySelector('header').offsetHeight;
+    if (box.top < head + 10 || box.bottom > innerHeight - 30) {
+      scrollTo({ top: scrollY + box.top - head - 40, behavior: 'smooth' });
+    }
+  }
+}
+function onEvent(ev) {
+  clearHighlight();
+  if (!ev) { finished(); return; }
+  for (const group of ev.elements || []) for (const el of group) { el.classList.add('playing'); lit.push(el); }
+  moveCursor(ev);
+}
+function finished() {
+  if (state !== 'playing') return;
+  halt();
+  showProgress(0);
+  if ($('loop').classList.contains('on')) play();
+}
+function halt() {
+  if (synth) synth.stop();
+  if (timing) timing.stop();
+  clearHighlight();
+  setState(visual ? 'idle' : 'idle');
+}
+
+// iOS mutes Web Audio while the ring switch is silent unless a media element
+// is also playing; a looping silent clip keeps score playback audible.
+function startKeepAlive() {
+  if (keepAlive) { keepAlive.play().catch(() => {}); return; }
+  const rate = 8000, n = rate / 2, bytes = new Uint8Array(44 + n), v = new DataView(bytes.buffer);
+  const put = (at, s) => { for (let i = 0; i < s.length; i++) bytes[at + i] = s.charCodeAt(i); };
+  put(0, 'RIFF'); v.setUint32(4, 36 + n, true); put(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true); put(36, 'data'); v.setUint32(40, n, true);
+  bytes.fill(128, 44);
+  keepAlive = new Audio(URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })));
+  keepAlive.loop = true; keepAlive.setAttribute('playsinline', '');
+  keepAlive.play().catch(() => {});
+}
+
+async function play() {
+  if (!visual || state === 'loading') return;
+  if (state === 'playing') {
+    synth.pause(); timing.pause(); if (keepAlive) keepAlive.pause();
+    setState('paused'); return;
+  }
+  startKeepAlive();
+  if (state === 'paused') { synth.resume(); timing.start(); setState('playing'); return; }
+  const mine = ++generation, from = progress;
+  setState('loading'); status('Loading instrument sounds…');
+  try {
+    context = context || new (window.AudioContext || window.webkitAudioContext)();
+    await context.resume();
+    synth = new ABCJS.synth.CreateSynth();
+    await synth.init({
+      audioContext: context, visualObj: visual,
+      millisecondsPerMeasure: visual.millisecondsPerMeasure(),
+      options: { soundFontUrl: location.origin + '/soundfonts/', program: 0, chordsOff: true },
+    });
+    await synth.prime();
+    if (mine !== generation) return;
+    duration = synth.duration || duration;
+    status('');
+    synth.start();
+    if (from > 0 && from < 1) { synth.seek(from); timing.setProgress(from); }
+    timing.start(from > 0 && from < 1 ? from : 0);
+    setState('playing');
+  } catch (e) {
+    setState('idle');
+    status('Playback could not start: ' + (e && e.message ? e.message : e), true);
+  }
+}
+
+function seekTo(p) {
+  showProgress(p);
+  if (state === 'playing' || state === 'paused') { synth.seek(p); timing.setProgress(p); }
+}
+
+let source = '', heading = '', engravedWidth = 0;
+function paperWidth() {
+  return Math.max(320, Math.min(1100, document.querySelector('main').clientWidth - 8));
+}
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (source && Math.abs(paperWidth() - engravedWidth) > 40) loadScore(source, heading);
+  }, 250);
+});
+
+// Print-width systems, one SVG each, so the app can paginate them into a PDF.
+window.exportSvgs = function () {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-20000px;top:0;width:800px;color:#000';
+  document.body.appendChild(host);
+  try {
+    // The PDF renderer mangles the scaled tempo note, so print the tempo as words.
+    const print = printable(source).replace(/^Q:\s*(?:\d+\/\d+\s*=\s*)?(\d+)\s*$/m, 'Q:"Tempo $1"');
+    ABCJS.renderAbc(host, print, {
+      staffwidth: 740, oneSvgPerLine: true, paddingtop: 4, paddingbottom: 4, paddingleft: 0, paddingright: 0,
+      wrap: { minSpacing: 1.6, maxSpacing: 2.8, preferredMeasuresPerLine: 4 },
+    });
+    // PDF renderers know nothing of CSS: resolve colours and drop page-only markup.
+    return JSON.stringify([...host.querySelectorAll('svg')].map((svg) => {
+      svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      return svg.outerHTML
+        .replace(/<style[\s\S]*?<\/style>/g, '').replace(/<title[\s\S]*?<\/title>/g, '')
+        .replace(/currentColor/g, '#000000')
+        .replace(/ (data-[a-z-]+|class|role|aria-label|selectable)="[^"]*"/g, '');
+    }));
+  } finally { host.remove(); }
+};
+window.exportMidi = function () {
+  const bytes = ABCJS.synth.getMidiFile(source, { midiOutputType: 'binary', chordsOff: true });
+  const data = Array.isArray(bytes) ? bytes[0] : bytes;
+  let text = ''; for (const b of data) text += String.fromCharCode(b);
+  return btoa(text);
+};
+function printable(abc) {
+  return abc.replace(/name="[^"]*"(\s+)snm="([^"]*)"/g, 'name="$2"$1snm="$2"');
+}
+
+// Called by the app once the page has loaded.
+window.loadScore = function (abc, title) {
+  source = abc; heading = title;
+  generation++;
+  if (state !== 'idle') halt();
+  visual = null; cursor = null; duration = 0;
+  $('title').textContent = title || 'Your score';
+  try {
+    // Phone staves have no room for long part names; use the short ones throughout.
+    abc = printable(abc);
+    const width = engravedWidth = paperWidth();
+    const result = ABCJS.renderAbc('paper', abc, {
+      add_classes: true, responsive: 'resize', staffwidth: width,
+      paddingtop: 12, paddingbottom: 20, paddingleft: 6, paddingright: 6,
+      wrap: { minSpacing: 1.6, maxSpacing: 2.8, preferredMeasuresPerLine: width < 520 ? 2 : width < 800 ? 3 : 4 },
+    });
+    if (!result || !result[0] || !document.querySelector('#paper .abcjs-note')) {
+      throw new Error('This result has no notes to show.');
+    }
+    visual = result[0];
+    const bpm = visual.getBpm();
+    timing = new ABCJS.TimingCallbacks(visual, {
+      qpm: bpm, eventCallback: onEvent,
+      beatCallback: (beat, total) => { if (state === 'playing' && total) showProgress(beat / total); },
+    });
+    const beats = visual.getTotalBeats ? visual.getTotalBeats() : 0;
+    duration = beats && bpm ? beats * 60 / bpm : 0;
+    showProgress(0); setState('idle'); status('');
+  } catch (e) {
+    setState('idle');
+    status(e && e.message ? e.message : String(e), true);
+  }
+};
+
+$('play').onclick = play;
+$('restart').onclick = () => { const was = state; if (was !== 'idle') halt(); showProgress(0); if (was === 'playing') play(); };
+$('loop').onclick = () => $('loop').classList.toggle('on');
+$('seek').oninput = (e) => seekTo(e.target.value / 1000);
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') play(); });
+</script>
+</body>
+</html>

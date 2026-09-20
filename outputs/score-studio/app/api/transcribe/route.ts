@@ -2,6 +2,7 @@ import {Client,handle_file} from '@gradio/client';
 import type {ScoreResult,Download} from '@/lib/types';
 import {prepareAudio} from '@/lib/audio';
 import {authorize} from '@/lib/auth';
+import {LOCAL_ENGINE,transcribeLocally} from '@/lib/local-engine';
 export const runtime='nodejs';
 const SPACE=process.env.HF_API_SPACE||'Reubencf/Score-Studio-API';
 const ORIGIN=process.env.HF_API_ORIGIN||'https://reubencf-score-studio-api.hf.space';
@@ -30,6 +31,11 @@ export async function POST(req:Request){
     send('status','Reading the full recording…');
     const {audio,duration}=await prepareAudio(input,preparation.signal);
     if(closed)return;
+    if(LOCAL_ENGINE){
+     const result=await transcribeLocally(audio,status=>send('status',status),preparation.signal);
+     if(!closed)send('result',result);
+     return;
+    }
     send('status','Connecting to the transcription studio…');
     client=await Client.connect(SPACE,{events:['status','data'],token:auth.session.token as `hf_${string}`});
     if(req.signal.aborted||closed){client.close();return;}

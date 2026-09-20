@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:score_studio/main.dart';
+import 'package:score_studio/studio_screen.dart';
 
 void main() {
   testWidgets('Home follows the device theme and fits a small screen', (
@@ -27,5 +28,17 @@ void main() {
       Theme.of(tester.element(find.byType(Scaffold))).brightness,
       Brightness.light,
     );
+  });
+  test('Errors show a plain sentence and keep diagnostics separate', () {
+    const raw =
+        'Bad state: YouTube blocks app downloads for this video. '
+        'Details: IOS (stream lookup): returned 403';
+    expect(errorSummary(raw), 'YouTube blocks app downloads for this video.');
+    expect(errorDetails(raw), 'IOS (stream lookup): returned 403');
+    expect(
+      errorSummary('Choose a recording first.'),
+      'Choose a recording first.',
+    );
+    expect(errorDetails('Choose a recording first.'), '');
   });
 }

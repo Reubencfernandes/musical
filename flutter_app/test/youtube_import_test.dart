@@ -41,6 +41,68 @@ class StalledDownload implements YoutubeSource {
 }
 
 void main() {
+  test('Cancel immediately releases an unresponsive lookup', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'youtube-cancel-lookup-',
+    );
+    final source = StalledSource();
+    final importer = YoutubeImporter(sourceFactory: () => source);
+    try {
+      final operation = importer.import(
+        'https://youtu.be/u10U7BHQQ2Y',
+        root,
+        (_, _) async => fail('Must not convert'),
+        (_, _) {},
+      );
+      final check = expectLater(
+        operation.timeout(const Duration(seconds: 1)),
+        throwsA(isA<ImportCancelled>()),
+      );
+      importer.cancel();
+      await check;
+      expect(source.closed, true);
+      expect(importer.busy, false);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test(
+    'Conversion errors identify the decoder instead of blaming YouTube',
+    () async {
+      final root = await Directory.systemTemp.createTemp('youtube-decoder-');
+      final importer = YoutubeImporter(
+        sourceFactory: () => FakeSource(
+          YoutubeAudio(
+            'Song',
+            const Duration(seconds: 10),
+            3,
+            Stream.value([1, 2, 3]),
+          ),
+        ),
+      );
+      try {
+        await expectLater(
+          importer.import(
+            'https://youtu.be/u10U7BHQQ2Y',
+            root,
+            (_, _) async => throw StateError('decoder unavailable'),
+            (_, _) {},
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('Audio downloaded, but conversion failed'),
+            ),
+          ),
+        );
+        expect(await root.list().isEmpty, true);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
   test(
     'Stalled download closes its source before awaiting stream cancellation',
     () async {

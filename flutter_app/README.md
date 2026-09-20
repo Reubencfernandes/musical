@@ -42,4 +42,44 @@ Uses `youtube_explode_dart` without cookies, a proxy, a hosted downloader or a d
 
 `dart run bin/youtube_smoke.dart <video-url>` checks a real download and converts a ten-second validation excerpt on a desktop with FFmpeg. This command removes its temporary files. Apple native conversion still requires a Mac/iPhone build test.
 
-Validation: 15 automated tests pass, including timeout/cancellation recovery. A live test of the supplied YouTube link reached stream selection but the audio download stalled on the development network; end-to-end YouTube success and Apple conversion are not yet verified.
+Validation of the original implementation covered timeout/cancellation recovery. The original downloader stalled on the development network. See the September 2026 repair notes below for current validation.
+
+## September 2026 phone repair
+
+Keep audio.cpp for YuE2/SheetSage2; a llama.cpp Flutter binding is not a replacement for these model-specific audio pipelines. The reported device is an iPhone 15 Pro, closing after Create score or Generate music.
+
+The pinned runtime used desktop-sized, `no_alloc` GGML metadata arenas: SheetSage2 defaults to a 1536 MiB decoder arena and multiplies that by eight for its encoder (12 GiB); YuE2 defaults to several 1.5–6 GiB contexts. `runtime_options.dart` now sets explicit 16 MiB weight metadata contexts and 128 MiB graph contexts (the native patch also removes SheetSage2's encoder multiplier). These do not cap tensor weights, GPU workspaces, or total process memory. They are a mitigation pending real-model validation, not proof that inference fits the phone. Audio duration is checked before float allocation and before model loading.
+
+YouTube import tries iOS, Android VR and Android SDK-less manifests separately and requires actual audio bytes before choosing one. The app reads the CDN with the matching client user agent and bounded stream buffers, waits for disk writes, and propagates stream errors. Each mobile stream uses a single request because reusing its URL for further ranges can return HTTP 403. Cancellation releases a stalled lookup immediately; decoder failures are reported separately from download failures. Direct import remains dependent on YouTube allowing the request.
+
+Tests cover HTTP ranges and full responses, invalid/truncated/oversized responses, cancellation and decoder errors. Phone crash logs and real-model inference still require a connected, unlocked device. Changes are local and are not in the existing TestFlight installation.
+
+Repair validation on 2026-09-19: `flutter analyze` passes and all 33 tests pass. A real CDN probe received audio bytes, but subsequent complete live downloads were rejected with HTTP 403; end-to-end YouTube import is still unverified. The Mac's attempts to read the paired iPhone's crash logs failed to connect. Do not describe either feature as fixed on the phone until those checks succeed.
+
+## Physical iPhone repair, 2026-09-20
+
+Cable access confirmed two build-2 crashes with `EXC_BAD_ACCESS` in
+`ggml_metal_buffer_is_shared` while uploading SheetSage2 encoder weights.
+`native/patch_runtime.py` now propagates failed Metal allocations and cleans
+up resources they owned. CMake applies this checked patch during configuration.
+
+A first patched-device run stayed open and reported an encoder workspace
+allocation failure (3652.97 MiB). SheetSage2's Metal encoder now uses the
+runtime's existing non-causal flash attention implementation, and its metadata
+context uses the configured 128 MiB directly instead of multiplying by eight.
+A five-second excerpt of the phone's existing recording then completed in
+28.5 seconds and produced nonempty ABC notation and note/chord events.
+No generation-model or other-device performance claim follows from this test.
+
+The full 111.16-second recording initially exposed an iOS GPU command-buffer
+failure. The native patch now divides large graphs across up to eight command
+buffers on iOS and caps the initial submission at 64 nodes. The full recording
+then completed on the iPhone 15 Pro in 55.6 seconds, producing ABC notation and
+note/chord events. The app disables auto-lock while inference runs and restores
+the idle timer afterward. The repaired cable installation is build 3.
+
+The physical-phone YouTube diagnostic reached both youtube.com and google.com
+(HTTP 200), but stream access returned HTTP 403 or a bot/sign-in challenge.
+Direct YouTube import is not verified working; failures are bounded and reported,
+and local audio import/transcription is the verified path. These changes have
+not been uploaded to TestFlight.
