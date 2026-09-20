@@ -1,0 +1,14 @@
+{
+  "name": "kiku-studio-desktop",
+  "productName": "Kiku Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kiku Studio for Mac and Windows: the web studio running its models on this computer's GPU.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}

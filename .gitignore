@@ -19,6 +19,10 @@ local.properties
 *.gguf
 *.safetensors
 .DS_Store
-flutter_app/native/external/
-flutter_app/native/build-*/
-flutter_app/native/artifacts/
+# Engine: pinned audio.cpp checkout, build trees and the built server binary
+engine/external/
+engine/build*/
+engine/bin/
+# Model weights are downloaded, never committed; the manifest is
+models/*
+!models/models.json

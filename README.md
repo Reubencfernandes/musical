@@ -1,39 +1,64 @@
-# Score Studio
+# Kiku Studio
 
-Audio-to-score web application and a Flutter on-device music studio integration. The app name remains Score Studio; this repository is named `musical`.
+Turn recordings into editable sheet music, and turn scores into new music.
+Two builds share one interface:
 
-Original project folder: `E:\ScoreStudio`.
+| Build | Where models run | Sign-in |
+|---|---|---|
+| **Web** (`apps/web`) | The Hugging Face ZeroGPU Space in `services/api` | Hugging Face, using each visitor's own GPU allowance |
+| **Desktop** (`apps/desktop`) | This computer's GPU, through the local engine in `engine/` | None |
 
-## Quick start
+The repository is named `musical`. The deployed Spaces keep their original
+names (`Reubencf/Score-Studio`, `Reubencf/Score-Studio-API`).
 
-The web app requires Node.js 24 and FFmpeg/ffprobe. From `outputs/score-studio`, run `npm ci`, copy `env.example` to `.env.local`, configure a private `SESSION_SECRET` and API/OAuth settings, then run `npm run dev`. Never commit credentials.
+## Layout
 
-For Flutter, install the Flutter SDK, then run `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter run` from `flutter_app`. Validated with Flutter 3.44.7 / Dart 3.12.2. iPhone builds require macOS, Xcode, and signing configured for your account.
+- `apps/web` — Next.js studio: upload or record, transcribe, edit notation, piano playback with a moving cursor, ABC/MIDI/PDF export.
+- `apps/desktop` — Electron shell. Starts the engine and the studio on loopback ports and shows the studio in a window.
+- `services/api` — Gradio ZeroGPU API used by the web build.
+- `engine` — builds the pinned [audio.cpp](https://github.com/0xShug0/audio.cpp) server (YuE2 + SheetSage2 only). See `engine/README.md`.
+- `models` — `models.json` lists every weight file with its URL, size and SHA-256. The weights themselves are downloaded, never committed.
+- `scripts` — deployment and verification helpers. Some retain Windows-specific paths; review before use.
 
-## Mobile direction and current limits
+## Run the web build
 
-The goal is on-device music generation/transcription, audio editing and export, retaining the orange dot-matrix musicians and existing visual style. See [mobile feasibility notes](docs/mobile-inference.md). Flutter now calls the pinned audio.cpp C API for YuE2 and SheetSage2 GGUF execution, with verified downloads and file export. Actual inference with model weights and Apple device builds still require validation. Incremental generated audio and the Flutter editor are not implemented. No low-end phone compatibility or generation speed is claimed.
+Requires Node.js 24 and FFmpeg/ffprobe on PATH.
 
-Model weights are downloaded separately. YuE2 and SheetSage2 have their own noncommercial licenses; this repository does not relicense them. Soundfont attribution is in `outputs/score-studio/public/soundfonts/ATTRIBUTION.md`; font notices are in `outputs/score-studio/public/fonts/README.md`; bundled abcjs notices accompany the assets.
+```sh
+cd apps/web
+npm ci
+cp env.example .env.local   # set a private SESSION_SECRET and the API/OAuth values
+npm run dev
+```
 
-Development scripts in `work` may retain Windows-specific paths. Review them before use. Credentials, build caches and private test recordings are excluded.
+## Run the desktop build
 
-## Existing application
+```sh
+./engine/build.sh            # once; see engine/README.md for GPU flags
+cd apps/web && npm ci && cd ../desktop && npm install
+npm run dev
+```
 
-- `outputs/score-studio`: Next.js web app, including the latest playback improvements.
-- `outputs/score-studio-api`: Gradio ZeroGPU API.
-- `outputs/sheetsage2-space`: original Gradio implementation.
-- `work`: deployment and verification scripts.
+Put model files where `apps/desktop/main.js` looks for them:
+`models/sheetsage2/sheetsage2-orig.gguf` for transcription, and
+`models/yue2/` (the two GGUF files plus `sidecars/`) for generation. A model that
+is missing is simply not offered. The studio switches to the local engine when
+`SCORE_BACKEND=local`, which the desktop app sets for it; the web build is
+unaffected.
 
-Run the web app from `outputs/score-studio` with `npm ci`, then `npm run dev`.
-The original C-drive copy is retained; an already-running localhost server may still use it.
-Local environment settings are excluded from GitHub. Create your own `.env.local` from `env.example` and keep it private.
+## Status
 
-Live web app: https://reubencf-score-studio.hf.space/
-API: https://reubencf-score-studio-api.hf.space/
+- Web: deployed and working.
+- Desktop: prototype. The window, the local engine and the transcription route
+  work on macOS/Metal. Generation has no screen yet, there is no installer or
+  in-app model download, and Windows, CUDA and Vulkan are untested.
+- An earlier Flutter phone app was retired in favour of these two builds. It is
+  preserved in git history at commit `68b6fd0`.
 
-## Flutter native studio
+## Licences
 
-`flutter_app` includes model downloads, style/lyrics generation, recording transcription, local result playback/export, device light/dark theme, and the dot-matrix musicians. Follow [Flutter setup](flutter_app/README.md) and [Apple native build instructions](flutter_app/native/README.md). A normal Flutter build alone does not bundle the audio runtime. Browser builds show a native-app notice.
-
-The integration prioritizes iOS/macOS. Android native packaging is pending. Neither phone performance nor universal low-end phone support has been validated.
+Model weights are downloaded separately. YuE2 and SheetSage2 have their own
+noncommercial licences; this repository does not relicense them. Soundfont
+attribution is in `apps/web/public/soundfonts/ATTRIBUTION.md`; font notices are in
+`apps/web/public/fonts/README.md`; bundled abcjs notices accompany the assets.
+Never commit credentials: `.env*` files are ignored.

@@ -1,0 +1,40 @@
+.studio-nav{position:fixed;top:22px;left:25px;z-index:10;display:flex;gap:3px;padding:4px;border:1px solid var(--line);border-radius:100px;background:var(--panel)}
+.studio-nav a{display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border-radius:100px;font-size:13px;color:var(--muted)}
+.studio-nav a:hover{color:var(--ink)}
+.studio-nav a.chosen{background:var(--accent);color:#fff}
+.music-view{min-height:100svh;display:flex;flex-direction:column;align-items:center;padding:96px 24px 60px}
+.music-panel{width:100%;max-width:680px}
+.music-panel label.field{display:block;font-size:13px;color:var(--muted);margin:22px 0 9px}
+.music-panel textarea,.music-panel input[type=text]{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--ink);padding:13px 15px;font-size:15px;line-height:1.6;resize:vertical}
+.music-panel textarea.lyrics{min-height:190px}
+.music-panel textarea.melody{min-height:110px;font:13px/1.7 monospace}
+.style-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.style-chips button{font-size:12px;padding:7px 12px;border-radius:100px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+.style-chips button:hover{color:var(--ink);border-color:var(--accent)}
+.length-row{display:flex;align-items:center;gap:16px}
+.length-row input[type=range]{flex:1;accent-color:var(--accent)}
+.length-row output{min-width:54px;text-align:right;font-variant-numeric:tabular-nums;font-size:15px}
+.length-note{font-size:12px;color:var(--muted);margin:9px 0 0;line-height:1.6}
+.melody-toggle{margin-top:20px;font-size:13px;color:var(--muted)}
+.melody-toggle summary{cursor:pointer;padding:6px 0}
+.making{margin-top:26px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);display:flex;align-items:center;gap:14px;font-size:14px}
+.making .spinner{flex:none}
+.making span.time{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.library{width:100%;max-width:680px;margin-top:46px}
+.library h2{font-size:19px;margin:0 0 4px}
+.library>p{font-size:12px;color:var(--muted);margin:0 0 16px;overflow-wrap:anywhere}
+.song{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:15px 16px;margin-bottom:11px}
+.song.fresh{border-color:var(--accent)}
+.song header{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.song header strong{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.song header span{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.song .style{font-size:12px;color:var(--muted);margin:0 0 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.song audio{width:100%;height:38px}
+.song .song-actions{display:flex;gap:6px;margin-top:9px}
+.song .song-actions a,.song .song-actions button{font-size:12px;padding:6px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;gap:6px}
+.song .song-actions a:hover,.song .song-actions button:hover{color:var(--ink)}
+.desktop-only{max-width:520px;text-align:center;margin-top:18vh}
+.desktop-only h1{font-size:30px;margin:0 0 14px}
+.desktop-only p{color:var(--muted);line-height:1.7}
+.heading-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:640px){.studio-nav{left:14px;top:18px}.music-view{padding:84px 16px 40px}}
