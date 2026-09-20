@@ -21,7 +21,7 @@ const clock=(s:number)=>`${Math.floor(s/60)}:${String(Math.round(s)%60).padStart
 
 export default function Music(){
  const [ready,setReady]=useState(false),[available,setAvailable]=useState(false),[library,setLibrary]=useState('');
- const [style,setStyle]=useState(''),[lyrics,setLyrics]=useState(''),[melody,setMelody]=useState(''),[seconds,setSeconds]=useState(30);
+ const [style,setStyle]=useState(''),[lyrics,setLyrics]=useState(''),[melody,setMelody]=useState(''),[seconds,setSeconds]=useState(30),[keepScore,setKeepScore]=useState(false);
  const [songs,setSongs]=useState<Song[]>([]),[fresh,setFresh]=useState(''),[error,setError]=useState('');
  const [making,setMaking]=useState(false),[message,setMessage]=useState(''),[elapsed,setElapsed]=useState(0);
  const abort=useRef<AbortController|null>(null);
@@ -44,7 +44,7 @@ export default function Music(){
   setError('');setMaking(true);setElapsed(0);setMessage('Starting…');
   const controller=new AbortController();abort.current=controller;
   try{
-   const response=await fetch('/api/generate',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({style,lyrics,seconds,melody})});
+   const response=await fetch('/api/generate',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({style,lyrics,seconds,melody,keepScore})});
    if(!response.ok||!response.body)throw new Error((await response.json().catch(()=>null))?.error||'The song could not be started.');
    const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
    for(;;){
@@ -79,8 +79,12 @@ export default function Music(){
       <label className="field" htmlFor="length">Length</label>
       <div className="length-row"><input id="length" type="range" min={10} max={180} step={5} value={seconds} onChange={e=>setSeconds(Number(e.target.value))} disabled={making}/><output htmlFor="length">{clock(seconds)}</output></div>
       <p className="length-note">Up to 3 minutes. The song ends early if the lyrics run out{pace?<> · about {clock(seconds*pace)} to make on this computer</>:null}.</p>
-      <details className="melody-toggle" open={!!melody}><summary>Follow a melody{melody?' · one is loaded':''}</summary>
-       <textarea className="melody" value={melody} onChange={e=>setMelody(e.target.value)} placeholder="Paste ABC notation — for example a score you transcribed in the Score room. The new song keeps this tune in your chosen style." maxLength={20000} disabled={making}/>
+      <details className="melody-toggle" open={!!melody}><summary>Use a score{melody?' · one is loaded':''}</summary>
+       <textarea className="melody" value={melody} onChange={e=>setMelody(e.target.value)} placeholder="Paste ABC notation — for example a score you transcribed in the Score room. Leave this empty to write a brand new song." maxLength={20000} disabled={making}/>
+       {melody&&<div className="route-choice" role="radiogroup" aria-label="How to use this score">
+        <label><input type="radio" name="route" checked={!keepScore} onChange={()=>setKeepScore(false)} disabled={making}/><span><strong>Cover</strong> — keep the tune, rewrite the arrangement in your style</span></label>
+        <label><input type="radio" name="route" checked={keepScore} onChange={()=>setKeepScore(true)} disabled={making}/><span><strong>Render this score</strong> — follow the harmony and form as written, for a score you edited</span></label>
+       </div>}
       </details>
       {error&&<div className="error-message" role="alert"><p>{error}</p><button type="button" onClick={()=>setError('')} aria-label="Dismiss error"><X size={17}/></button></div>}
       {making?<div className="making" role="status"><span className="spinner"/><span>{message}</span><span className="time">{clock(elapsed)}</span><button type="button" className="clear-button" onClick={()=>abort.current?.abort()}><Square size={12} fill="currentColor"/> Stop</button></div>:

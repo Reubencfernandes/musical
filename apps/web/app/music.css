@@ -36,5 +36,9 @@
 .desktop-only{max-width:520px;text-align:center;margin-top:18vh}
 .desktop-only h1{font-size:30px;margin:0 0 14px}
 .desktop-only p{color:var(--muted);line-height:1.7}
+.route-choice{display:flex;flex-direction:column;gap:9px;margin:13px 0 4px}
+.route-choice label{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--muted)}
+.route-choice input{margin-top:3px;accent-color:var(--accent)}
+.route-choice strong{color:var(--ink);font-weight:500}
 .heading-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:640px){.studio-nav{left:14px;top:18px}.music-view{padding:84px 16px 40px}}

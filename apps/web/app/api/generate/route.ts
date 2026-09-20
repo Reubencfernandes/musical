@@ -14,7 +14,7 @@ export async function GET(){
 export async function POST(req:Request){
  const auth=await authorize(req);if(auth.error)return auth.error;
  if(!LOCAL_ENGINE)return Response.json({error:'Music generation runs in the Kiku Studio desktop app.'},{status:501});
- const input=await req.json().catch(()=>null) as {title?:unknown;style?:unknown;lyrics?:unknown;seconds?:unknown;melody?:unknown;seed?:unknown}|null;
+ const input=await req.json().catch(()=>null) as {title?:unknown;style?:unknown;lyrics?:unknown;seconds?:unknown;melody?:unknown;keepScore?:unknown;seed?:unknown}|null;
  const style=typeof input?.style==='string'?input.style.trim().slice(0,2000):'';
  const lyrics=typeof input?.lyrics==='string'?input.lyrics.trim().slice(0,12000):'';
  const melody=typeof input?.melody==='string'?input.melody.trim().slice(0,20000):'';
@@ -31,10 +31,12 @@ export async function POST(req:Request){
    const abort=()=>{closed=true;work.abort();};req.signal.addEventListener('abort',abort,{once:true});
    const started=Date.now();
    // Long jobs send nothing for minutes; a heartbeat keeps the connection visibly alive.
-   const beat=setInterval(()=>send('status',melody?'Arranging your melody on this computer…':'Composing and rendering on this computer…'),15000);
+   const beat=setInterval(()=>send('status',melody?'Arranging your score on this computer…':'Composing and rendering on this computer…'),15000);
    try{
     send('status','Loading the music model…');
-    const options:Record<string,string>={style,seed:String(seed),cot:melody?'melody':'full',
+    // Upstream's two symbolic routes: a cover keeps only the tune and lets the model
+    // rewrite the arrangement, while an edited score is rendered as written.
+    const options:Record<string,string>={style,seed:String(seed),cot:melody&&!input?.keepScore?'melody':'full',
      semantic_max_tokens:String(seconds*TOKENS_PER_SECOND),
      // The planner writes the melody first; longer songs need a longer plan.
      abc_max_tokens:String(Math.min(4096,Math.max(512,seconds*20)))};
