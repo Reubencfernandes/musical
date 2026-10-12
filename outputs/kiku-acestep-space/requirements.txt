@@ -1,0 +1,7 @@
+# ACE-Step is pinned to a commit rather than the stale 0.1.0 PyPI release, which
+# pins an old gradio and blocks the ZeroGPU-supported torch builds.
+git+https://github.com/ace-step/ACE-Step.git@1bee4c9f5b43e30995f8d4d33b3919197ce1bd68
+demucs==4.1.0
+gradio==5.49.1
+librosa==0.11.0
+soundfile==0.13.1

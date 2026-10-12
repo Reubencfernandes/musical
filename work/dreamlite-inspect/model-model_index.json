@@ -1,0 +1,28 @@
+{
+  "_class_name": "DreamLitePipeline",
+  "_diffusers_version": "0.37.0",
+  "processor": [
+    "transformers",
+    "Qwen3VLProcessor"
+  ],
+  "scheduler": [
+    "diffusers",
+    "FlowMatchEulerDiscreteScheduler"
+  ],
+  "text_encoder": [
+    "transformers",
+    "Qwen3VLForConditionalGeneration"
+  ],
+  "tokenizer": [
+    "transformers",
+    "Qwen2TokenizerFast"
+  ],
+  "unet": [
+    "dreamlite.models.unets.unet_2d_condition_mobile",
+    "DreamLiteUNetModel"
+  ],
+  "vae": [
+    "diffusers",
+    "AutoencoderTiny"
+  ]
+}

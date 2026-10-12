@@ -1,0 +1,21 @@
+{
+  "status": "Written",
+  "caption": "A brief, jaunty piano motif played on a bright, clean acoustic piano. The piece consists of a quick, ascending and descending melodic run followed by a final, resolving chord. The style is reminiscent of a playful classical etude or a short musical sting from an animated film.",
+  "lyrics": "[Instrumental]",
+  "metadata": {
+    "bpm": 100,
+    "timesignature": "3",
+    "language": "en",
+    "duration": 50.0
+  },
+  "health": {
+    "ready": true,
+    "model": "ACE-Step 1.5",
+    "gpu": "L40S",
+    "worker_id": "6e15e5d955104bf3891222f51948c089",
+    "model_initialization_seconds": 17.712332240000023,
+    "cpu_snapshot_enabled": true,
+    "snapshot_preparation_seconds": 36.646696965000004
+  },
+  "end_to_end_seconds": 3.824902199999997
+}

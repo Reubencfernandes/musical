@@ -1,0 +1,18 @@
+{
+  "label": "snapshot-web-1",
+  "end_to_end_seconds": 10.399173899999369,
+  "status": "Finished in 0m 1s with ACE-Step 1.5.",
+  "audio_seconds": 30.0,
+  "health": {
+    "ready": true,
+    "model": "ACE-Step 1.5",
+    "gpu": "L40S",
+    "worker_id": "6e15e5d955104bf3891222f51948c089",
+    "model_initialization_seconds": 17.712332240000023,
+    "cpu_snapshot_enabled": true,
+    "snapshot_preparation_seconds": 36.646696965000004
+  },
+  "audio_file": "E:\\ScoreStudio\\outputs\\kiku-modal\\benchmark-results\\snapshot-web-1.wav",
+  "seed": 42,
+  "steps": 8
+}

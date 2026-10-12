@@ -19,10 +19,22 @@ local.properties
 *.gguf
 *.safetensors
 .DS_Store
-# Engine: pinned audio.cpp checkout, build trees and the built server binary
-engine/external/
-engine/build*/
-engine/bin/
-# Model weights are downloaded, never committed; the manifest is
-models/*
-!models/models.json
+flutter_app/native/external/
+flutter_app/native/build-*/
+flutter_app/native/artifacts/
+
+# Local tooling and vendored Python deps (reinstall instead)
+.tools/
+work/*-deps/
+
+# Test recordings and generated audio; the app's own soundfont samples stay
+outputs/audio-share/
+outputs/audio-test-*/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.webm
+*.mp4
+!outputs/kiku-ai/public/soundfonts/**

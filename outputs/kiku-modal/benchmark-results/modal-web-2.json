@@ -1,0 +1,16 @@
+{
+  "label": "modal-web-2",
+  "end_to_end_seconds": 7.91282880000108,
+  "status": "Finished in 0m 1s with ACE-Step 1.5.",
+  "audio_seconds": 30.0,
+  "health": {
+    "ready": true,
+    "model": "ACE-Step 1.5",
+    "gpu": "L40S",
+    "worker_id": "f7104adca4b54564a4822772c7e7a4a0",
+    "model_initialization_seconds": 56.383175951999995
+  },
+  "audio_file": "E:\\ScoreStudio\\outputs\\kiku-modal\\benchmark-results\\modal-web-2.wav",
+  "seed": 42,
+  "steps": 8
+}

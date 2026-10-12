@@ -1,0 +1,13 @@
+{
+  "label": "zerogpu-1",
+  "space_revision": "a97e29a6a70718a4f09ce6030877baebeb1a4514",
+  "space_stage_before_test": "RUNNING",
+  "client_setup_seconds": 3.8963634000010643,
+  "duration_requested": 30,
+  "seed": 42,
+  "steps": 8,
+  "end_to_end_seconds": 8.94157019999875,
+  "status": "Finished in 0m 2s with ACE-Step 1.5.",
+  "audio_seconds": 30.0,
+  "audio_file": "E:\\ScoreStudio\\outputs\\kiku-modal\\benchmark-results\\zerogpu-1.wav"
+}

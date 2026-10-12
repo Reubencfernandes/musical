@@ -1,0 +1,4 @@
+[
+  {"repo":"m-a-p/YuE2-3B","revision":"8f24312f187763b9854adeec87e437e2b03bbff1","destination":"/data/yue2","allow_patterns":["*.json","*.safetensors","*.tiktoken"]},
+  {"repo":"m-a-p/YuE2-Vae","revision":"152733a19ad43aa67e367f9b5503ef8075bb5126","destination":"/data/yue2-vae","allow_patterns":["*.json","*.safetensors","*.bin","*.pt"]}
+]

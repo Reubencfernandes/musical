@@ -1,0 +1,42 @@
+{
+  "status": "Finished in 0m 3s with ACE-Step 1.5.",
+  "generation_seconds": 7.800144779999982,
+  "model_initialization_seconds": 17.712332240000023,
+  "cpu_snapshot_enabled": true,
+  "snapshot_preparation_seconds": 36.646696965000004,
+  "worker_id": "6e15e5d955104bf3891222f51948c089",
+  "gpu": "NVIDIA L40S",
+  "peak_allocated_gib": 15.107672691345215,
+  "audio_seconds": 30.0,
+  "sample_rate": 48000,
+  "channels": 2,
+  "seed": 42,
+  "prompt": "Warm acoustic pop instrumental, piano, clean guitar, bass and gentle drums, 100 BPM, no vocals",
+  "steps": 8,
+  "planner_backend": "pt",
+  "compile_model": false,
+  "model_revisions": [
+    {
+      "repo": "ACE-Step/Ace-Step1.5",
+      "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+      "destination": "/data/checkpoints",
+      "allow_patterns": [
+        "acestep-v15-turbo/*",
+        "acestep-5Hz-lm-1.7B/*",
+        "vae/*",
+        "Qwen3-Embedding-0.6B/*"
+      ]
+    },
+    {
+      "repo": "ACE-Step/acestep-v15-base",
+      "revision": "e432212fec32b8965a14ffa57ae653438d6abd14",
+      "destination": "/data/checkpoints/acestep-v15-base",
+      "allow_patterns": null
+    }
+  ],
+  "label": "snapshot-restore",
+  "end_to_end_seconds": 38.88971320000019,
+  "audio_bytes": 5760044,
+  "rms_dbfs": -21.73038678165431,
+  "audio_file": "E:\\ScoreStudio\\outputs\\kiku-modal\\benchmark-results\\snapshot-restore.wav"
+}

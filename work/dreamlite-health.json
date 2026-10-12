@@ -1,0 +1,9 @@
+{
+  "ready": true,
+  "model": "DreamLite-base",
+  "gpu": "NVIDIA L40S",
+  "worker_id": "4c8be765a7924e55a004cd1c6e6f45b2",
+  "cpu_snapshot_enabled": true,
+  "snapshot_preparation_seconds": 8.158900437,
+  "model_revision": "751cb8dbb9072a8c8ffd8684e0f254b50f20531b"
+}

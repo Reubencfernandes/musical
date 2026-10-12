@@ -1,0 +1,29 @@
+# The official ACE-Step 1.5 Space's stack (https://huggingface.co/spaces/ACE-Step/Ace-Step-v1.5),
+# minus the nano-vllm, flash-attention and training packages this Space does not use:
+# ZeroGPU refuses nano-vllm's direct CUDA calls, so the language model runs on PyTorch.
+torch==2.9.1
+torchaudio==2.9.1
+torchvision==0.24.1
+transformers>=4.51.0,<4.58.0
+diffusers
+gradio==6.2.0
+spaces
+huggingface_hub>=0.20.0
+accelerate>=1.12.0
+einops>=0.8.1
+vector-quantize-pytorch>=1.27.15
+numba>=0.63.1
+scipy>=1.10.1
+soundfile>=0.13.1
+loguru>=0.7.3
+diskcache
+peft>=0.7.0
+pyyaml
+tqdm
+xxhash
+
+# Kiku's analysis and mixing (audio_tools.py) and vocal separation
+librosa==0.11.0
+demucs==4.1.0
+# Locks restyles and rewrites onto the source's beats (audio_tools.follow); needs rubberband-cli
+pyrubberband==0.4.0

@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: yue2-infer
+Version: 0.1.5
+Summary: YuE2 AR-NAR song generation with portable Hugging Face loading
+Requires-Python: >=3.10
+License-File: LICENSE
+License-File: THIRD_PARTY_NOTICES.md
+License-File: licenses/SnakeBeta-NVIDIA-MIT.txt
+License-File: licenses/stable-audio-tools-MIT.txt
+Requires-Dist: torch==2.10.0
+Requires-Dist: transformers==4.57.6
+Requires-Dist: huggingface-hub==0.36.2
+Requires-Dist: safetensors==0.7.0
+Requires-Dist: tiktoken==0.12.0
+Requires-Dist: numpy==2.2.6
+Requires-Dist: soundfile==0.13.1
+Requires-Dist: accelerate==1.13.0
+Provides-Extra: fast
+Requires-Dist: vllm==0.19.0; extra == "fast"
+Requires-Dist: triton==3.6.0; extra == "fast"
+Provides-Extra: test
+Requires-Dist: pytest==9.0.3; extra == "test"
+Provides-Extra: bench
+Requires-Dist: nvidia-ml-py==13.610.43; extra == "bench"
+Provides-Extra: serve
+Requires-Dist: fastapi==0.136.1; extra == "serve"
+Requires-Dist: uvicorn==0.46.0; extra == "serve"
+Dynamic: license-file

@@ -1,0 +1,22 @@
+{
+  "scope": "Native score edit and round-trip only; no generated-audio claim",
+  "source": "Kiku engine fixture score.abc",
+  "original_note": [
+    "0",
+    64,
+    "1/2"
+  ],
+  "edited_note": [
+    "0",
+    66,
+    "1/4"
+  ],
+  "checks": {
+    "requested_pitch_and_duration_survive_serialization": true,
+    "other_vocal_notes_unchanged": true,
+    "instrumental_melody_unchanged": true,
+    "chords_unchanged": true,
+    "tempo_unchanged": true,
+    "bars_keys_meters_sections_unchanged": true
+  }
+}

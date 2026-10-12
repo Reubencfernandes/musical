@@ -1,0 +1,18 @@
+/* Caption helpers and Enhance, shared by the studio panel and the Generate page. */
+.prompt-helper{display:flex;flex-direction:column;gap:6px;margin:-2px 0 2px}
+.prompt-dimensions,.prompt-words{display:flex;flex-wrap:wrap;gap:4px}
+.prompt-dimensions button{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:12px;font-size:10px;color:#8a8a94;background:#222226;border:1px solid transparent}
+.prompt-dimensions button:hover{color:var(--ink);background:#2b2b30}
+.prompt-dimensions button.on{color:var(--ink);border-color:#4a4a52}
+.prompt-dimensions button i{width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.prompt-dimensions button.covered{color:#c9c9d1}
+.prompt-words button{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:12px;font-size:10px;color:#ffb08c;background:#ff713314;border:1px solid #ff713333}
+.prompt-words button:hover:not(:disabled){background:#ff713326}
+.prompt-words button:disabled{opacity:.35;cursor:default}
+.prompt-tools{display:flex;align-items:flex-start;gap:8px}
+.prompt-tools .prompt-helper{flex:1;min-width:0}
+.enhance-button{flex:none;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:13px;font-size:11px;font-weight:500;color:#1d140d;background:linear-gradient(135deg,#ffb08c,#ff7133);margin-top:-2px}
+.enhance-button:disabled{opacity:.45;cursor:default}
+.enhance-button.busy{opacity:1;background:#3a2a22;color:#ffb08c}
+.enhance-button .spinner{width:11px;height:11px}
+.measured{margin:0;font-size:10px;color:#9fcfb6}

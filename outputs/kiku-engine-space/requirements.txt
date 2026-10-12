@@ -1,0 +1,44 @@
+# One coherent stack for three models that pin conflicting versions.
+#
+# The YuE2 wheel has the strictest pins (torch 2.10.0, transformers 4.57.6,
+# numpy 2.2.6, accelerate 1.13.0), so it is installed first and everything else
+# is fitted around it. ACE-Step pins transformers 4.50.0 and SheetSage2 pins
+# 4.45.2; pip cannot satisfy all three, so those two run on 4.57.6 and the
+# acestep package itself is installed with --no-deps at startup in app.py.
+# Its real inference imports are listed here instead.
+https://huggingface.co/m-a-p/YuE2-3B/resolve/14fc6c6f146441b1dd6363fcb2e01e82a6914cb7/yue2_infer-0.1.5-py3-none-any.whl
+
+gradio==5.49.1
+
+# ACE-Step inference dependencies (its training-only ones are deliberately absent)
+diffusers>=0.33.0
+# Must match the torch 2.10.0 the YuE2 wheel pins. Left unpinned, pip takes the
+# newest builds, which are compiled against CUDA 13 while torch 2.10.0 ships
+# CUDA 12 — the extension then fails to load on libcudart.so.13.
+torchaudio==2.10.0
+torchvision==0.25.0
+librosa==0.11.0
+loguru==0.7.3
+tqdm
+spacy==3.8.4
+pypinyin==0.53.0
+py3langid==0.3.0
+hangul-romanize==0.1.0
+num2words==0.5.14
+cutlet
+fugashi[unidic-lite]
+peft
+
+# Vocal separation for the accompaniment and stems endpoints
+demucs==4.1.0
+
+# SheetSage2 transcription and score rendering
+scipy==1.13.1
+mir_eval==0.8.2
+pretty_midi==0.2.10
+mido==1.3.3
+playwright==1.58.0
+setuptools==78.1.1
+
+# Locks YuE2 renders onto a recording's bar lines (sync.py); needs rubberband-cli
+pyrubberband==0.4.0

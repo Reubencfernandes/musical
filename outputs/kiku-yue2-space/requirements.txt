@@ -1,0 +1,4 @@
+# The inference wheel pins its own torch/transformers/numpy versions, so it is
+# listed first and left to resolve them. Pinned to a commit so rebuilds match.
+https://huggingface.co/m-a-p/YuE2-3B/resolve/14fc6c6f146441b1dd6363fcb2e01e82a6914cb7/yue2_infer-0.1.5-py3-none-any.whl
+gradio==5.49.1

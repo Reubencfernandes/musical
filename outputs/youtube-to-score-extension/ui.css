@@ -1,0 +1,65 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --ink: #1d1f1e;
+  --muted: #5f6662;
+  --line: #dfe2df;
+  --accent: #0f7a6c;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2f2ef;
+  --danger: #c62828;
+  --danger-soft: #fdeceb;
+  --radius: 10px;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151716;
+    --panel: #1e2120;
+    --ink: #eceeed;
+    --muted: #a2aaa6;
+    --line: #333836;
+    --accent: #3fbfa9;
+    --accent-ink: #08201c;
+    --accent-soft: #19332e;
+    --danger: #ef7b74;
+    --danger-soft: #3a1f1e;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+a { color: var(--accent); }
+h1, h2 { margin: 0; line-height: 1.25; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.hidden { display: none !important; }
+
+button, .button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+button:hover, .button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button.danger { color: var(--danger); }
+button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); font-weight: 500; }
+
+input[type=text], input[type=number], input[type=password] {
+  width: 100%; min-height: 34px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit;
+}
+input:focus-visible, button:focus-visible, .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+label { display: block; }
+.check { display: flex; align-items: center; gap: 8px; }
+.check input { accent-color: var(--accent); margin: 0; }
+
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+
+.alert { padding: 10px 12px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); }
+.note { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); }

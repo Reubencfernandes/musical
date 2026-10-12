@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YouTube to Score</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header>
+  <h1>YouTube to Score</h1>
+  <button id="open-captures" class="link" type="button">Captures</button>
+</header>
+
+<section id="elsewhere" class="hidden">
+  <p class="muted">Open a YouTube video, then click this button again to record part of it.</p>
+</section>
+
+<form id="setup" class="hidden">
+  <p id="video-title" class="title"></p>
+  <div class="row">
+    <label>Start
+      <input id="start" type="text" inputmode="numeric" autocomplete="off" placeholder="0:00">
+    </label>
+    <label>Length (seconds)
+      <input id="length" type="number" min="5" max="600" step="5" value="30">
+    </label>
+  </div>
+  <p class="small muted">At <span id="position">0:00</span> now · <button id="use-position" class="link small" type="button">start here</button></p>
+  <div class="presets" role="group" aria-label="Length presets">
+    <button type="button" data-len="15">15 s</button>
+    <button type="button" data-len="30">30 s</button>
+    <button type="button" data-len="60">1 min</button>
+    <button type="button" data-len="180">3 min</button>
+  </div>
+  <label class="check"><input id="transcribe" type="checkbox" checked> Turn into sheet music when done</label>
+  <label class="check indent"><input id="melody" type="checkbox"> Melody only (no chords)</label>
+  <label class="check indent"><input id="piano" type="checkbox" checked> Piano preview of the score</label>
+  <p id="setup-error" class="alert hidden" role="alert"></p>
+  <button id="record" class="primary wide" type="submit">Record</button>
+  <p class="small muted">The video plays in real time while it records, so 30 s takes 30 s. Ads and buffering are left out.</p>
+</form>
+
+<section id="recording" class="hidden" aria-live="polite">
+  <p id="rec-title" class="title"></p>
+  <p class="rec-line"><span class="dot" aria-hidden="true"></span><strong id="rec-status">Recording</strong><span id="rec-time" class="muted">0:00 / 0:30</span></p>
+  <div class="bar" aria-hidden="true"><span id="rec-progress"></span></div>
+  <div class="meter" aria-hidden="true"><span id="rec-level"></span></div>
+  <div class="actions">
+    <button id="stop" class="primary" type="button">Stop and keep</button>
+    <button id="cancel" class="danger" type="button">Discard</button>
+  </div>
+</section>
+
+<section id="failed" class="hidden">
+  <p id="failed-text" class="alert" role="alert"></p>
+  <button id="dismiss" type="button">OK</button>
+</section>
+
+<details id="settings">
+  <summary>SheetSage settings</summary>
+  <label>Space
+    <input id="space" type="text" spellcheck="false" placeholder="Reubencf/Score-Studio-API">
+  </label>
+  <label>Hugging Face token <span class="muted">(optional)</span>
+    <input id="token" type="password" spellcheck="false" placeholder="hf_…">
+  </label>
+  <p class="small muted">With a token, transcription uses your own ZeroGPU quota and can reach private Spaces. It is stored only in this browser.</p>
+  <button id="save-settings" type="button">Save</button>
+  <span id="saved" class="small muted hidden">Saved</span>
+</details>
+
+<script type="module" src="popup.js"></script>
+</body>
+</html>

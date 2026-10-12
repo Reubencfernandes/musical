@@ -1,0 +1,19 @@
+[
+  {
+    "repo": "ACE-Step/Ace-Step1.5",
+    "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+    "destination": "/data/checkpoints",
+    "allow_patterns": [
+      "acestep-v15-turbo/*",
+      "acestep-5Hz-lm-1.7B/*",
+      "vae/*",
+      "Qwen3-Embedding-0.6B/*"
+    ]
+  },
+  {
+    "repo": "ACE-Step/acestep-v15-base",
+    "revision": "e432212fec32b8965a14ffa57ae653438d6abd14",
+    "destination": "/data/checkpoints/acestep-v15-base",
+    "allow_patterns": null
+  }
+]

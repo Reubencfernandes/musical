@@ -1,0 +1,33 @@
+{
+  "ready": true,
+  "model": "YuE2",
+  "gpu": "NVIDIA L40S",
+  "backend": "torch",
+  "worker_id": "679f89ac2b0f44549db5dd570a576521",
+  "model_initialization_seconds": 9.044654867,
+  "cpu_snapshot_enabled": true,
+  "snapshot_preparation_seconds": 4.855574879,
+  "model_revisions": [
+    {
+      "repo": "m-a-p/YuE2-3B",
+      "revision": "8f24312f187763b9854adeec87e437e2b03bbff1",
+      "destination": "/data/yue2",
+      "allow_patterns": [
+        "*.json",
+        "*.safetensors",
+        "*.tiktoken"
+      ]
+    },
+    {
+      "repo": "m-a-p/YuE2-Vae",
+      "revision": "152733a19ad43aa67e367f9b5503ef8075bb5126",
+      "destination": "/data/yue2-vae",
+      "allow_patterns": [
+        "*.json",
+        "*.safetensors",
+        "*.bin",
+        "*.pt"
+      ]
+    }
+  ]
+}

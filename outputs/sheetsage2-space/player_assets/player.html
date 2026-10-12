@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>/*PLAYER_CSS*/</style>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5faf9;color:#183832;font:15px system-ui,sans-serif}
+header{position:sticky;top:0;z-index:2;padding:20px 22px 14px;background:#f5faf9;border-bottom:1px solid #dbe9e5}
+h2{font-size:23px;margin:0 0 6px;letter-spacing:-.5px}p{margin:6px 0 14px;color:#516962;line-height:1.5}
+.tag{font-size:11px;letter-spacing:1.5px;font-weight:700;color:#087e6a;margin-bottom:6px}
+#audio{margin-top:12px}.abcjs-inline-audio{background:#163f36;border-radius:10px;max-width:100%;height:auto;min-height:42px;flex-wrap:wrap;padding:8px}
+#paper{background:white;margin:18px 12px;padding:14px 10px;border:1px solid #e0eae6;border-radius:12px;overflow:auto}
+#paper svg{min-width:560px}.playing-note{fill:#009e7d!important;stroke:#009e7d!important}
+.score-cursor{stroke:#ec9156;stroke-width:3;pointer-events:none}label{font-size:13px;color:#516962}
+#message{font-size:13px;margin:10px 0 0}button:focus-visible,input:focus-visible{outline:3px solid #eab076;outline-offset:3px}
+</style></head><body>
+<header><div class="tag">LISTEN · FOLLOW · PRACTISE</div><h2>Play your sheet music</h2>
+<p>Follow the teal notes and orange playhead. Slow down, loop, or jump along the progress bar.</p>
+<label><input id="follow" type="checkbox" checked> Follow the score automatically</label>
+<div id="audio"></div><p id="message" role="status">Press play to load the piano sounds. Playback follows the written score.</p></header>
+<main id="paper" aria-label="Musical score"></main>
+<script>/*PLAYER_LIBRARY*/</script>
+<script>
+const abc=/*SCORE_DATA*/null;
+const paper=document.querySelector('#paper'), message=document.querySelector('#message');
+let lastTop=null;
+function clearMarks(){paper.querySelectorAll('.playing-note').forEach(el=>el.classList.remove('playing-note'));}
+const cursor={
+ onStart(){message.textContent='Playing the written score — highlighted notes match the piano.';},
+ onEvent(event){
+  if(event.left==null)return;
+  clearMarks();
+  (event.elements||[]).flat().forEach(el=>el.classList.add('playing-note'));
+  const svg=paper.querySelector('svg');if(!svg)return;
+  let line=svg.querySelector('.score-cursor');
+  if(!line){line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('class','score-cursor');svg.appendChild(line);}
+  line.setAttribute('x1',event.left-2);line.setAttribute('x2',event.left-2);
+  line.setAttribute('y1',event.top);line.setAttribute('y2',event.top+event.height);
+  if(document.querySelector('#follow').checked && lastTop!==event.top){
+   const bounds=line.getBoundingClientRect(), head=document.querySelector('header').getBoundingClientRect();
+   if(bounds.top<head.bottom+15 || bounds.bottom>innerHeight-35)window.scrollBy({top:bounds.top-head.bottom-35,behavior:'smooth'});
+  }
+  lastTop=event.top;
+ },
+ onFinished(){clearMarks();paper.querySelectorAll('.score-cursor').forEach(el=>el.remove());lastTop=null;message.textContent='Finished. Press play to listen again.';}
+};
+try{
+ const tune=ABCJS.renderAbc('paper',abc,{add_classes:true,responsive:'resize',staffwidth:740})[0];
+ if(!tune || !paper.querySelector('svg'))throw new Error('No readable notation');
+ if(!ABCJS.synth.supportsAudio())throw new Error('This browser does not support score playback');
+ const control=new ABCJS.synth.SynthController();
+ control.load('#audio',cursor,{displayLoop:true,displayRestart:true,displayPlay:true,displayProgress:true,displayWarp:true});
+ control.setTune(tune,false,{program:0}).catch(fail);
+ window.addEventListener('pagehide',()=>control.pause());
+ function fail(err){message.textContent='Piano playback could not load. Check your connection and reload the score. Your PDF and MIDI downloads are still available.';console.error(err);}
+}catch(err){message.textContent='Interactive playback is unavailable for this score. Use the printable score or MIDI download below.';console.error(err);}
+</script></body></html>

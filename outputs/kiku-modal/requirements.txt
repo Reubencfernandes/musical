@@ -1,0 +1,23 @@
+# Same inference stack as the existing Kiku ACE-Step 1.5 Space; native CUDA.
+torch==2.9.1
+torchaudio==2.9.1
+torchvision==0.24.1
+transformers==4.57.6
+diffusers==0.36.0
+gradio==6.2.0
+huggingface_hub==0.36.0
+accelerate==1.12.0
+einops>=0.8.1
+vector-quantize-pytorch>=1.27.15
+numba>=0.63.1
+scipy>=1.10.1
+soundfile>=0.13.1
+loguru>=0.7.3
+diskcache
+peft>=0.7.0
+pyyaml
+tqdm
+xxhash
+librosa==0.11.0
+demucs==4.1.0
+pyrubberband==0.4.0

@@ -1,0 +1,45 @@
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 32px;
+  max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px;
+}
+main { display: grid; gap: 16px; align-content: start; }
+article { display: grid; gap: 16px; }
+h1 { font-size: 22px; }
+h2 { font-size: 16px; }
+h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.clip-head p { margin: 6px 0 0; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 12px; }
+audio { width: 100%; }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.options { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+#status { font-variant-numeric: tabular-nums; }
+#status.busy::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
+  border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { #status.busy::before { animation: none; } }
+
+#result { display: grid; gap: 16px; }
+.result-head { display: flex; align-items: baseline; gap: 12px; }
+.pages { display: grid; gap: 12px; }
+.pages:empty { display: none; }
+.pages img { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); }
+summary { cursor: pointer; font-weight: 600; }
+pre { margin: 0; padding: 12px; max-height: 320px; overflow: auto; background: var(--bg); border-radius: 8px; font-size: 12px; white-space: pre-wrap; }
+.files { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 16px; }
+.files li { padding: 3px 0; break-inside: avoid; }
+
+aside h2 { margin-bottom: 10px; }
+.clips { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.clips a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; }
+.clips a:hover { background: var(--panel); }
+.clips a[aria-current=page] { background: var(--accent-soft); }
+.clips .name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clips .meta { font-size: 12px; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; padding: 20px 16px 48px; }
+  .files { columns: 1; }
+}

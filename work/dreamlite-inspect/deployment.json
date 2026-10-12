@@ -1,0 +1,34 @@
+{
+  "repo": "carlofkl/DreamLite-base",
+  "revision": "751cb8dbb9072a8c8ffd8684e0f254b50f20531b",
+  "diffusers": "0.41.0",
+  "branch": "diffusers",
+  "model_index": {
+    "_class_name": "DreamLitePipeline",
+    "_diffusers_version": "0.37.0",
+    "processor": [
+      "transformers",
+      "Qwen3VLProcessor"
+    ],
+    "scheduler": [
+      "diffusers",
+      "FlowMatchEulerDiscreteScheduler"
+    ],
+    "text_encoder": [
+      "transformers",
+      "Qwen3VLForConditionalGeneration"
+    ],
+    "tokenizer": [
+      "transformers",
+      "Qwen2TokenizerFast"
+    ],
+    "unet": [
+      "diffusers",
+      "DreamLiteUNetModel"
+    ],
+    "vae": [
+      "diffusers",
+      "AutoencoderTiny"
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capture · YouTube to Score</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="clip.css">
+</head>
+<body>
+<div class="layout">
+  <main id="main">
+    <section id="empty" class="hidden">
+      <h1>No capture open</h1>
+      <p class="muted">Open a YouTube video and click the YouTube to Score button to record part of it. Your captures are listed here.</p>
+    </section>
+
+    <article id="clip" class="hidden">
+      <header class="clip-head">
+        <h1 id="title"></h1>
+        <p class="muted"><span id="range"></span> · <a id="source" target="_blank" rel="noopener">Open on YouTube</a></p>
+      </header>
+
+      <div class="panel">
+        <audio id="player" controls preload="metadata"></audio>
+        <div class="row-actions">
+          <a id="download-mp3" class="button" download>Download MP3</a>
+          <button id="delete" class="danger" type="button">Delete capture</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Sheet music</h2>
+        <div class="options">
+          <label class="check"><input id="melody" type="checkbox"> Melody only (no chords)</label>
+          <label class="check"><input id="piano" type="checkbox" checked> Piano preview of the score</label>
+        </div>
+        <div class="row-actions">
+          <button id="transcribe" class="primary" type="button">Transcribe with SheetSage2</button>
+          <button id="abort" class="hidden" type="button">Cancel</button>
+          <span id="status" class="muted" aria-live="polite"></span>
+        </div>
+        <p id="error" class="alert hidden" role="alert"></p>
+      </div>
+
+      <section id="result" class="hidden">
+        <div class="result-head">
+          <h2>Score</h2>
+          <span id="result-note" class="muted small"></span>
+        </div>
+        <div class="row-actions" id="main-files"></div>
+        <div id="pages" class="pages"></div>
+        <div id="preview-wrap" class="panel hidden">
+          <h3>Piano preview</h3>
+          <audio id="preview" controls preload="metadata"></audio>
+        </div>
+        <details class="panel">
+          <summary>ABC notation</summary>
+          <pre id="abc"></pre>
+          <button id="copy-abc" type="button">Copy ABC</button>
+        </details>
+        <details class="panel">
+          <summary>All files (<span id="file-count">0</span>)</summary>
+          <ul id="files" class="files"></ul>
+        </details>
+      </section>
+    </article>
+  </main>
+
+  <aside>
+    <h2>Captures</h2>
+    <ul id="clips" class="clips"></ul>
+  </aside>
+</div>
+<script type="module" src="clip.js"></script>
+</body>
+</html>
