@@ -17,10 +17,16 @@
     return (heading?.textContent || document.title.replace(/ - YouTube( Music)?$/, '')).trim();
   }
 
+  function channel() {
+    const owner = document.querySelector('ytd-watch-metadata ytd-channel-name a, #owner ytd-channel-name a, ytmusic-player-bar .byline a');
+    return (owner?.textContent || '').trim();
+  }
+
   function info() {
     const v = video();
     return {
       title: title(),
+      channel: channel(),
       url: location.href,
       videoId: new URL(location.href).searchParams.get('v'),
       time: v ? v.currentTime : 0,

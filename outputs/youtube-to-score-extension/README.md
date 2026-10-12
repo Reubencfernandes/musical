@@ -18,11 +18,34 @@ SheetSage2 through the [Score-Studio-API](https://huggingface.co/spaces/Reubencf
 3. Press **Record**. The video jumps to the start and plays; the clip records in real time.
    Ads, pauses and buffering are left out. **Stop and keep** ends early.
 4. A capture page opens with the MP3 (play or download). If "Turn into sheet music" was on, it
-   sends the clip to SheetSage2 right away and shows the PDF/PNG score, MIDI, ABC, piano preview
-   and every file the model returns. Results are saved with the capture, so they outlive the
-   Space's 24-hour file cache.
+   sends the clip to SheetSage2 right away. Results are saved with the capture, so they outlive
+   the Space's 24-hour file cache.
 
 All captures are listed on the capture page (popup → **Captures**).
+
+## Sheet music
+
+The capture page engraves SheetSage2's result as A4 sheet music with
+[Verovio](https://www.verovio.org), with the song's title and artist in the header and
+"Transcribed by SheetSage" under them.
+
+- **Piano** (default): the melody in the right hand over a left hand written from SheetSage2's
+  chords: bass then chords on the beats (a waltz in 3/4), or held chords. The melody moves by
+  octaves into the right hand's range.
+- **Lead sheet**: the melody on one staff with chord symbols, in a treble, treble-8 or bass
+  clef to suit its range.
+- Rhythms are split by the beat and beamed by the beat, with ties and accidentals placed as a
+  copyist would. SheetSage2's padded first bar becomes a real pickup, chord names are spelled
+  for the key (B♭maj7/D, not A#maj7/C##), and its sections become rehearsal marks.
+- **Key** transposes the whole score by up to six semitones. **Play along** plays the
+  recording and highlights each bar as it sounds (from SheetSage2's downbeats); click a bar to
+  play from there.
+- **Print / Save PDF** prints just the pages (choose "Save as PDF" as the printer), and
+  **MusicXML** opens in MuseScore, Finale, Sibelius or Dorico.
+
+Title and artist come from the video title ("Artist - Song (Official Video)") and channel, and
+can be edited on the page. SheetSage2's own PDF, PNG pages, MIDI and ABC are still under
+**All files**.
 
 ## How it works
 
@@ -32,8 +55,11 @@ All captures are listed on the capture page (popup → **Captures**).
 | `background.js` | Runs the capture and opens the capture page when it finishes |
 | `offscreen.*`, `recorder-worklet.js` | Records the tab's audio straight to 192 kbps MP3 (lamejs) and keeps the tab audible |
 | `content.js` | Reads the YouTube player, seeks, and reports when the video itself is audible |
-| `clip.*` | Capture page: playback, download, transcription, results |
+| `clip.*` | Capture page: playback, download, transcription, the engraved score |
 | `sheetsage.js` | Gradio API client: `/gradio_api/upload`, then `/gradio_api/call/transcribe` |
+| `score.js` | Reads SheetSage2's ABC (the native dialect), arranges it and writes MusicXML |
+| `sheet.js` | Engraves MusicXML into pages with Verovio and follows the recording bar by bar |
+| `title.js` | Song title and artist from a YouTube title and channel |
 | `db.js` | IndexedDB storage for captures and results |
 
 It records what the tab plays (`chrome.tabCapture`) instead of downloading YouTube's streams, so
@@ -50,4 +76,9 @@ works. Set it as `owner/name` or a full `https://….hf.space` URL in settings.
 - SheetSage2 weights are CC BY-NC 4.0 (non-commercial).
 - `vendor/lame.min.js` is [lamejs](https://github.com/zhuker/lamejs) 1.2.1, LGPL-3.0
   (`vendor/lame.LICENSE`).
+- `vendor/verovio/` is [Verovio](https://www.verovio.org) 6.3.0's WebAssembly build, unmodified,
+  LGPL-3.0-or-later (`vendor/verovio/COPYING.LESSER`). WebAssembly is why the manifest allows
+  `wasm-unsafe-eval` on extension pages.
+- `score.js` reads the native dialect with the rules of Kiku AI's `lib/engrave.ts`; any other
+  ABC falls back to SheetSage2's own pages.
 - Tab audio capture doesn't work in headless Chrome (it records silence), so test in a real window.

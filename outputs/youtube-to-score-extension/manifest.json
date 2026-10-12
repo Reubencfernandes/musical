@@ -1,25 +1,51 @@
 {
   "manifest_version": 3,
   "name": "YouTube to Score",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Record a stretch of a YouTube video as an MP3 and turn it into sheet music with SheetSage2.",
   "minimum_chrome_version": "116",
   "action": {
     "default_title": "YouTube to Score",
     "default_popup": "popup.html",
-    "default_icon": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png"}
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png"
+    }
   },
-  "icons": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"},
-  "background": {"service_worker": "background.js"},
-  "permissions": ["tabCapture", "offscreen", "storage", "scripting"],
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "scripting"
+  ],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://music.youtube.com/*",
     "https://*.hf.space/*"
   ],
-  "content_scripts": [{
-    "matches": ["https://www.youtube.com/*", "https://music.youtube.com/*"],
-    "js": ["content.js"],
-    "run_at": "document_idle"
-  }]
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://music.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
 }

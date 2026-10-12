@@ -1,9 +1,18 @@
-.layout {
-  display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 32px;
-  max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px;
+:root {
+  --desk: #e6e7eb;
+  --page-shadow: 0 1px 2px rgba(20, 24, 28, .12), 0 8px 24px rgba(20, 24, 28, .12);
+  --now: rgba(122, 126, 245, .2);
 }
-main { display: grid; gap: 16px; align-content: start; }
-article { display: grid; gap: 16px; }
+@media (prefers-color-scheme: dark) {
+  :root { --desk: #0e100f; --page-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px rgba(0, 0, 0, .45); }
+}
+
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px;
+  max-width: 1320px; margin: 0 auto; padding: 32px 24px 64px;
+}
+main { display: grid; gap: 16px; align-content: start; min-width: 0; }
+article { display: grid; gap: 16px; min-width: 0; }
 h1 { font-size: 22px; }
 h2 { font-size: 16px; }
 h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
@@ -21,8 +30,56 @@ audio { width: 100%; }
 @keyframes spin { to { transform: rotate(1turn); } }
 @media (prefers-reduced-motion: reduce) { #status.busy::before { animation: none; } }
 
-#result { display: grid; gap: 16px; }
-.result-head { display: flex; align-items: baseline; gap: 12px; }
+#result { display: grid; gap: 16px; min-width: 0; }
+.result-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+/* Score settings */
+.sheet-settings { grid-template-columns: repeat(auto-fit, minmax(160px, auto)); align-items: end; gap: 12px 20px; }
+.field { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.field.wide { grid-column: span 2; }
+.field input, .field select { font-weight: 400; color: var(--ink); }
+select {
+  min-height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); font: inherit;
+}
+select:disabled { opacity: .5; }
+.segmented { display: inline-flex; padding: 3px; gap: 3px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.segmented button { min-height: 28px; border: 0; background: transparent; padding: 0 12px; font-weight: 600; }
+.segmented button[aria-checked=true] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .15); color: var(--accent); }
+.segmented button:disabled { opacity: .45; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.stepper button { min-height: 32px; min-width: 34px; padding: 0; border: 0; background: transparent; font-size: 16px; }
+.stepper output { min-width: 64px; text-align: center; font-weight: 600; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* Playback and export bar: stays in view while the pages scroll. */
+.sheet-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(8px);
+}
+.bar-gap { flex: 1; }
+#sheet-time { font-variant-numeric: tabular-nums; min-width: 84px; }
+.play-icon { width: 0; height: 0; border-style: solid; border-width: 6px 0 6px 10px; border-color: transparent transparent transparent currentColor; }
+#sheet-play[aria-pressed=true] .play-icon { width: 10px; height: 12px; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+
+/* The pages: white paper on a desk, A4 proportions, zoomable. */
+.sheet {
+  --zoom: 1;
+  display: grid; justify-items: center; gap: 28px;
+  padding: 28px; border-radius: 14px; background: var(--desk); overflow-x: auto;
+}
+.sheet:empty { display: none; }
+.sheet-loading { margin: 48px 0; }
+.page {
+  position: relative; width: calc(100% * var(--zoom)); max-width: none;
+  aspect-ratio: 210 / 297; background: #fff; box-shadow: var(--page-shadow); border-radius: 2px;
+}
+.page svg { display: block; width: 100%; height: 100%; }
+.page-number { position: absolute; bottom: 2.2%; left: 0; right: 0; text-align: center; font: 13px/1 "Times New Roman", Times, serif; color: #222; }
+.sheet g.measure { cursor: pointer; }
+.sheet rect.now { fill: var(--now); }
+
 .pages { display: grid; gap: 12px; }
 .pages:empty { display: none; }
 .pages img { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); }
@@ -39,7 +96,22 @@ aside h2 { margin-bottom: 10px; }
 .clips .name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clips .meta { font-size: 12px; color: var(--muted); }
 
-@media (max-width: 760px) {
+@media (max-width: 960px) {
   .layout { grid-template-columns: 1fr; padding: 20px 16px 48px; }
   .files { columns: 1; }
+  .sheet { padding: 12px; gap: 16px; }
+  .field.wide { grid-column: auto; }
+}
+
+/* Printing (and "Save as PDF") shows only the score, one A4 page per sheet. */
+#print-root { display: none; }
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  html, body { background: #fff !important; }
+  body > :not(#print-root) { display: none !important; }
+  #print-root { display: block; }
+  .print-page { position: relative; width: 210mm; height: 297mm; overflow: hidden; break-after: page; }
+  .print-page:last-child { break-after: auto; }
+  .print-page svg { display: block; width: 210mm; height: 297mm; }
+  .print-page .page-number { bottom: 6.5mm; font-size: 10pt; }
 }

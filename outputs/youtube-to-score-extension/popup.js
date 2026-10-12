@@ -101,7 +101,7 @@ async function record(event) {
     const streamId = await chrome.tabCapture.getMediaStreamId({targetTabId: tab.id});
     const res = await chrome.runtime.sendMessage({
       target: 'background', type: 'start',
-      tabId: tab.id, streamId, start, seconds, title: info.title, url: info.url, options,
+      tabId: tab.id, streamId, start, seconds, title: info.title, channel: info.channel, url: info.url, options,
     });
     if (res?.error) throw new Error(res.error);
   } catch (err) {

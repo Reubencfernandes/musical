@@ -43,13 +43,61 @@
         <p id="error" class="alert hidden" role="alert"></p>
       </div>
 
-      <section id="result" class="hidden">
+      <section id="result" class="hidden" aria-labelledby="score-heading">
         <div class="result-head">
-          <h2>Score</h2>
+          <h2 id="score-heading">Score</h2>
           <span id="result-note" class="muted small"></span>
         </div>
-        <div class="row-actions" id="main-files"></div>
+
+        <div id="sheet-settings" class="panel sheet-settings">
+          <label class="field wide">Title
+            <input id="sheet-title" type="text" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field wide">Artist
+            <input id="sheet-artist" type="text" autocomplete="off" spellcheck="false" placeholder="Unknown artist">
+          </label>
+          <div class="field">
+            <span id="layout-label">Layout</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="layout-label">
+              <button type="button" role="radio" data-layout="piano">Piano</button>
+              <button type="button" role="radio" data-layout="lead">Lead sheet</button>
+            </div>
+          </div>
+          <label class="field">Left hand
+            <select id="sheet-hand">
+              <option value="pattern">Bass and chords</option>
+              <option value="held">Held chords</option>
+            </select>
+          </label>
+          <div class="field">
+            <span id="key-label">Key</span>
+            <div class="stepper" role="group" aria-labelledby="key-label">
+              <button id="key-down" type="button" aria-label="Transpose down a semitone">−</button>
+              <output id="key-name" aria-live="polite"></output>
+              <button id="key-up" type="button" aria-label="Transpose up a semitone">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet-bar" role="toolbar" aria-label="Score playback and export">
+          <button id="sheet-play" class="primary" type="button" aria-pressed="false"><span class="play-icon" aria-hidden="true"></span><span class="play-text">Play along</span></button>
+          <span id="sheet-time" class="muted small">0:00</span>
+          <span class="bar-gap"></span>
+          <div class="stepper" role="group" aria-label="Zoom">
+            <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <output id="zoom-label">100%</output>
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          </div>
+          <button id="sheet-print" type="button">Print / Save PDF</button>
+          <a id="sheet-xml" class="button" download>MusicXML</a>
+        </div>
+
+        <div id="sheet" class="sheet" aria-label="Sheet music" aria-busy="true"><p class="sheet-loading muted">Engraving the score…</p></div>
+        <p id="sheet-error" class="alert hidden" role="alert"></p>
         <div id="pages" class="pages"></div>
+        <p id="sheet-note" class="muted small"></p>
+
+        <div class="row-actions" id="main-files"></div>
         <div id="preview-wrap" class="panel hidden">
           <h3>Piano preview</h3>
           <audio id="preview" controls preload="metadata"></audio>
@@ -60,7 +108,7 @@
           <button id="copy-abc" type="button">Copy ABC</button>
         </details>
         <details class="panel">
-          <summary>All files (<span id="file-count">0</span>)</summary>
+          <summary>All files from SheetSage2 (<span id="file-count">0</span>)</summary>
           <ul id="files" class="files"></ul>
         </details>
       </section>
@@ -72,6 +120,7 @@
     <ul id="clips" class="clips"></ul>
   </aside>
 </div>
+<div id="print-root" aria-hidden="true"></div>
 <script type="module" src="clip.js"></script>
 </body>
 </html>

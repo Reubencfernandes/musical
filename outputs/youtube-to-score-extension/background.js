@@ -42,10 +42,10 @@ async function end(fields) {
 }
 
 const handlers = {
-  async start({tabId, streamId, seconds, start, title, url, options}) {
+  async start({tabId, streamId, seconds, start, title, channel, url, options}) {
     if ((await current()).status === 'recording') throw new Error('A recording is already running.');
     await ensureOffscreen();
-    const meta = {title, url, start, requested: seconds, options};
+    const meta = {title, channel: channel || '', url, start, requested: seconds, options};
     const res = await toOffscreen({type: 'record', streamId, seconds, meta});
     if (res?.error) {
       await closeOffscreen();
