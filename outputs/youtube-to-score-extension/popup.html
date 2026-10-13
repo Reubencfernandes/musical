@@ -7,67 +7,81 @@
 <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-<header>
-  <h1>YouTube to Score</h1>
-  <button id="open-captures" class="link" type="button">Captures</button>
+<header class="brand">
+  <img src="icons/32.png" alt="" width="20" height="20">
+  <span>YouTube to Score</span>
+  <button id="open-captures" class="text-button" type="button">Captures</button>
 </header>
 
 <section id="elsewhere" class="hidden">
-  <p class="muted">Open a YouTube video, then click this button again to record part of it.</p>
+  <h1>Open a song on YouTube</h1>
+  <p class="muted">Then click this button again to choose the part to turn into sheet music.</p>
 </section>
 
-<form id="setup" class="hidden">
-  <p id="video-title" class="title"></p>
-  <div class="row">
-    <label>Start
-      <input id="start" type="text" inputmode="numeric" autocomplete="off" placeholder="0:00">
-    </label>
-    <label>Length (seconds)
-      <input id="length" type="number" min="5" max="600" step="5" value="30">
-    </label>
+<form id="setup" class="hidden" novalidate>
+  <h1>Choose the part to transcribe</h1>
+  <p id="video-title" class="video-title muted"></p>
+
+  <div id="timeline-wrap" class="timeline">
+    <canvas id="timeline" class="dots" aria-hidden="true"></canvas>
+    <input id="range-start" type="range" min="0" step="1" aria-label="Start of the part">
+    <input id="range-end" type="range" min="0" step="1" aria-label="End of the part">
   </div>
-  <p class="small muted">At <span id="position">0:00</span> now · <button id="use-position" class="link small" type="button">start here</button></p>
-  <div class="presets" role="group" aria-label="Length presets">
-    <button type="button" data-len="15">15 s</button>
-    <button type="button" data-len="30">30 s</button>
-    <button type="button" data-len="60">1 min</button>
-    <button type="button" data-len="180">3 min</button>
+
+  <div class="times">
+    <div class="time-field">
+      <label for="start">Start</label>
+      <div class="time-row">
+        <input id="start" class="input" type="text" inputmode="numeric" autocomplete="off" placeholder="0:00">
+        <button id="start-now" class="pill small" type="button" title="Use where the video is now">Now</button>
+      </div>
+    </div>
+    <div class="time-field">
+      <label for="end">End</label>
+      <div class="time-row">
+        <input id="end" class="input" type="text" inputmode="numeric" autocomplete="off" placeholder="3:30">
+        <button id="end-now" class="pill small" type="button" title="Use where the video is now">Now</button>
+      </div>
+    </div>
   </div>
-  <label class="check"><input id="transcribe" type="checkbox" checked> Turn into sheet music when done</label>
-  <label class="check indent"><input id="melody" type="checkbox"> Melody only (no chords)</label>
-  <label class="check indent"><input id="piano" type="checkbox" checked> Piano preview of the score</label>
+
+  <div id="chapter-field" class="hidden">
+    <label for="chapter" class="field-label">Chapter</label>
+    <select id="chapter"></select>
+  </div>
+
+  <p id="length" class="length" aria-live="polite"></p>
+
   <p id="setup-error" class="alert hidden" role="alert"></p>
-  <button id="record" class="primary wide" type="submit">Record</button>
-  <p class="small muted">The video plays in real time while it records, so 30 s takes 30 s. Ads and buffering are left out.</p>
+  <button id="fetch" class="pill primary wide hidden" type="button">Get audio now</button>
+  <button id="record" class="pill primary wide" type="submit">Record</button>
+  <p id="method-note" class="muted small note">The video plays while it records, so a part takes as long as it lasts. Ads and buffering are left out, and the sheet music opens when it finishes.</p>
 </form>
 
 <section id="recording" class="hidden" aria-live="polite">
-  <p id="rec-title" class="title"></p>
-  <p class="rec-line"><span class="dot" aria-hidden="true"></span><strong id="rec-status">Recording</strong><span id="rec-time" class="muted">0:00 / 0:30</span></p>
-  <div class="bar" aria-hidden="true"><span id="rec-progress"></span></div>
-  <div class="meter" aria-hidden="true"><span id="rec-level"></span></div>
+  <span id="rec-status" class="process-label">Recording</span>
+  <p id="rec-title" class="video-title"></p>
+  <canvas id="rec-wave" class="dots wave" aria-hidden="true"></canvas>
+  <p class="rec-time"><span id="rec-time">0:00</span></p>
   <div class="actions">
-    <button id="stop" class="primary" type="button">Stop and keep</button>
-    <button id="cancel" class="danger" type="button">Discard</button>
+    <button id="stop" class="pill primary" type="button">Stop and keep</button>
+    <button id="cancel" class="text-button danger" type="button">Discard</button>
   </div>
 </section>
 
 <section id="failed" class="hidden">
   <p id="failed-text" class="alert" role="alert"></p>
-  <button id="dismiss" type="button">OK</button>
+  <button id="dismiss" class="pill" type="button">OK</button>
 </section>
 
 <details id="settings">
   <summary>SheetSage settings</summary>
-  <label>Space
-    <input id="space" type="text" spellcheck="false" placeholder="Reubencf/Score-Studio-API">
-  </label>
-  <label>Hugging Face token <span class="muted">(optional)</span>
-    <input id="token" type="password" spellcheck="false" placeholder="hf_…">
-  </label>
+  <label class="field-label" for="space">Space</label>
+  <input id="space" type="text" spellcheck="false" placeholder="Reubencf/Score-Studio-API">
+  <label class="field-label" for="token">Hugging Face token <span class="muted">(optional)</span></label>
+  <input id="token" type="password" spellcheck="false" placeholder="hf_…">
   <p class="small muted">With a token, transcription uses your own ZeroGPU quota and can reach private Spaces. It is stored only in this browser.</p>
-  <button id="save-settings" type="button">Save</button>
-  <span id="saved" class="small muted hidden">Saved</span>
+  <div class="row"><button id="save-settings" class="pill" type="button">Save</button><span id="saved" class="small muted hidden">Saved</span></div>
 </details>
 
 <script type="module" src="popup.js"></script>

@@ -23,6 +23,26 @@ SheetSage2 through the [Score-Studio-API](https://huggingface.co/spaces/Reubencf
 
 All captures are listed on the capture page (popup → **Captures**).
 
+## Get audio now (optional: yt-dlp on your own PC)
+
+Recording takes as long as the part you pick. On your own PC the extension can
+instead fetch the part with [yt-dlp](https://github.com/yt-dlp/yt-dlp) through a
+small native-messaging helper in `native/`, which takes seconds.
+
+1. Install Python, yt-dlp (`pip install -U yt-dlp`) and ffmpeg.
+2. Run `powershell -ExecutionPolicy Bypass -File native\install.ps1`. It registers
+   the helper for this Windows user only, for the extension ID that
+   `chrome://extensions` shows (pass `-ExtensionId <id>` if yours differs).
+3. Reload the extension. The panel now shows **Get audio now**, with **Record instead**
+   as the fallback. `native\uninstall.ps1` removes it again.
+
+The helper downloads a song's audio once (kept a week in your temp folder) and cuts
+the exact part with ffmpeg, so play-along with the video lines up. It only works on a
+home connection: YouTube blocks cloud servers. Downloading is against YouTube's terms
+except through YouTube's own features, so use it only for music you may use, and leave
+it out of any build you publish (the Chrome Web Store does not allow YouTube
+downloaders). Without the helper, the extension records as before.
+
 ## Sheet music
 
 The capture page engraves SheetSage2's result as A4 sheet music with

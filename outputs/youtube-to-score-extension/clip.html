@@ -8,59 +8,81 @@
 <link rel="stylesheet" href="clip.css">
 </head>
 <body>
-<div class="layout">
+<svg width="0" height="0" class="hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M6 5v14M18 6.2v11.6a.8.8 0 0 1-1.2.7L8.6 12.7a.8.8 0 0 1 0-1.4l8.2-5.8a.8.8 0 0 1 1.2.7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9.2v5.6a.6.6 0 0 0 .9.5l4.4-2.8a.6.6 0 0 0 0-1l-4.4-2.8a.6.6 0 0 0-.9.5z" fill="currentColor"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="shell">
+  <nav id="sidebar" class="sidebar" aria-label="Captures">
+    <a class="brand" href="clip.html"><img src="icons/32.png" alt="" width="22" height="22"><span>YouTube to Score</span></a>
+    <div class="side-head"><h2>Captures</h2><span id="clip-count" class="count"></span><button id="sidebar-close" class="text-button side-close" type="button" aria-label="Close captures" title="Close captures">«</button></div>
+    <ul id="clips" class="clips"></ul>
+    <p class="side-note muted small">Record more from any YouTube video with the toolbar button.</p>
+  </nav>
+  <button id="sidebar-toggle" class="pill sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false">Captures</button>
   <main id="main">
+    <div class="panel-bar">
+      <a href="popup.html" class="text-button">← Record</a>
+      <button id="panel-captures" class="text-button" type="button" aria-controls="sidebar">Captures</button>
+      <button id="open-tab" class="text-button" type="button">Open in a tab ↗</button>
+      <button id="close-panel" class="text-button" type="button" aria-label="Close the panel" title="Close the panel">✕</button>
+    </div>
     <section id="empty" class="hidden">
       <h1>No capture open</h1>
       <p class="muted">Open a YouTube video and click the YouTube to Score button to record part of it. Your captures are listed here.</p>
     </section>
 
     <article id="clip" class="hidden">
-      <header class="clip-head">
-        <h1 id="title"></h1>
-        <p class="muted"><span id="range"></span> · <a id="source" target="_blank" rel="noopener">Open on YouTube</a></p>
+      <header class="workspace-heading">
+        <div>
+          <span class="process-label">Capture</span>
+          <h1 id="title"></h1>
+          <p id="artist-line" class="artist-line"></p>
+          <p class="muted small meta-line"><span id="range"></span> · <a id="source" target="_blank" rel="noopener">Open on YouTube</a></p>
+        </div>
+        <div class="heading-actions">
+          <a id="download-mp3" class="pill" download><svg width="16" height="16"><use href="#i-download"/></svg>MP3</a>
+          <button id="delete" class="text-button danger" type="button">Delete capture</button>
+        </div>
       </header>
 
-      <div class="panel">
-        <audio id="player" controls preload="metadata"></audio>
-        <div class="row-actions">
-          <a id="download-mp3" class="button" download>Download MP3</a>
-          <button id="delete" class="danger" type="button">Delete capture</button>
+      <section id="transcribe-panel" class="create-panel">
+        <div class="panel-head">
+          <h2>Sheet music</h2>
+          <span class="process-label ai-tag" title="The notes and chords are written by SheetSage2, an AI model from m-a-p, so they may contain errors.">AI transcription · SheetSage2</span>
         </div>
-      </div>
-
-      <div class="panel">
-        <h2>Sheet music</h2>
-        <div class="options">
-          <label class="check"><input id="melody" type="checkbox"> Melody only (no chords)</label>
-          <label class="check"><input id="piano" type="checkbox" checked> Piano preview of the score</label>
+        <div id="processing" class="processing hidden" aria-live="polite">
+          <canvas id="performer" class="musician" role="img" aria-label="A musician animated by dots on a fixed grid"></canvas>
+          <span id="status-label" class="process-label">Transcribing</span>
+          <p id="status" class="muted"></p>
+          <button id="abort" class="text-button" type="button">Cancel</button>
         </div>
-        <div class="row-actions">
-          <button id="transcribe" class="primary" type="button">Transcribe with SheetSage2</button>
-          <button id="abort" class="hidden" type="button">Cancel</button>
-          <span id="status" class="muted" aria-live="polite"></span>
+        <div id="transcribe-row" class="panel-actions">
+          <button id="transcribe" class="pill primary" type="button">Transcribe with SheetSage2</button>
+          <span id="done" class="muted small"></span>
         </div>
         <p id="error" class="alert hidden" role="alert"></p>
-      </div>
+      </section>
 
       <section id="result" class="hidden" aria-labelledby="score-heading">
-        <div class="result-head">
-          <h2 id="score-heading">Score</h2>
-          <span id="result-note" class="muted small"></span>
-        </div>
-
-        <div id="sheet-settings" class="panel sheet-settings">
-          <label class="field wide">Title
-            <input id="sheet-title" type="text" autocomplete="off" spellcheck="false">
-          </label>
-          <label class="field wide">Artist
-            <input id="sheet-artist" type="text" autocomplete="off" spellcheck="false" placeholder="Unknown artist">
-          </label>
+        <h2 id="score-heading" class="visually-hidden">Score</h2>
+        <button id="settings-toggle" class="pill settings-toggle" type="button" aria-controls="sheet-settings" aria-expanded="false">Score settings</button>
+        <div id="sheet-settings" class="score-settings">
+          <label class="field">Title<input id="sheet-title" type="text" autocomplete="off" spellcheck="false"></label>
+          <label class="field">Artist<input id="sheet-artist" type="text" autocomplete="off" spellcheck="false" placeholder="Unknown artist"></label>
           <div class="field">
             <span id="layout-label">Layout</span>
-            <div class="segmented" role="radiogroup" aria-labelledby="layout-label">
-              <button type="button" role="radio" data-layout="piano">Piano</button>
-              <button type="button" role="radio" data-layout="lead">Lead sheet</button>
+            <div class="chips" role="radiogroup" aria-labelledby="layout-label">
+              <button class="chip" type="button" role="radio" data-layout="piano">Piano</button>
+              <button class="chip" type="button" role="radio" data-layout="lead">Lead sheet</button>
             </div>
           </div>
           <label class="field">Left hand
@@ -79,46 +101,57 @@
           </div>
         </div>
 
-        <div class="sheet-bar" role="toolbar" aria-label="Score playback and export">
-          <button id="sheet-play" class="primary" type="button" aria-pressed="false"><span class="play-icon" aria-hidden="true"></span><span class="play-text">Play along</span></button>
-          <span id="sheet-time" class="muted small">0:00</span>
-          <span class="bar-gap"></span>
-          <div class="stepper" role="group" aria-label="Zoom">
+        <div class="transport" role="toolbar" aria-label="Score playback">
+          <button id="restart" class="transport-icon" type="button" title="Restart" aria-label="Restart"><svg width="18" height="18"><use href="#i-restart"/></svg></button>
+          <button id="play" class="transport-icon play-button" type="button" aria-label="Play score"><svg width="22" height="22"><use href="#i-play"/></svg></button>
+          <div class="track-progress">
+            <div id="progress-fill" class="progress-fill"></div>
+            <div class="track-label"><span id="elapsed">0:00</span><strong id="track-title"></strong><span id="remaining">SCORE</span></div>
+            <input id="seek" type="range" min="0" max="1" step="0.05" value="0" aria-label="Playback position">
+          </div>
+          <button id="loop" class="transport-icon" type="button" title="Loop" aria-label="Loop score" aria-pressed="false"><svg width="20" height="20"><use href="#i-loop"/></svg></button>
+          <button id="with-video" class="transport-chip" type="button" aria-pressed="false" title="Play the video muted, with this sheet playing along in time"><svg width="18" height="18" aria-hidden="true"><use href="#i-video"/></svg><span>With video</span></button>
+          <select id="speed" class="speed" aria-label="Speed">
+            <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option>
+          </select>
+          <div class="volume"><svg width="18" height="18" aria-hidden="true"><use href="#i-volume"/></svg><input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></div>
+        </div>
+
+        <div class="score-toolbar">
+          <div class="toolbar-group">
+            <label class="follow"><input id="follow" type="checkbox" checked> Follow notes</label>
+            <span class="divider"></span>
             <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
             <output id="zoom-label">100%</output>
             <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
           </div>
-          <button id="sheet-print" type="button">Print / Save PDF</button>
-          <a id="sheet-xml" class="button" download>MusicXML</a>
+          <div class="toolbar-group">
+            <button id="sheet-print" type="button"><svg width="17" height="17"><use href="#i-print"/></svg><span>Print</span></button>
+            <details class="download-menu">
+              <summary><svg width="17" height="17"><use href="#i-download"/></svg><span>Download</span><svg width="13" height="13"><use href="#i-chevron"/></svg></summary>
+              <div id="download-items">
+                <button id="download-pdf" type="button">Score · PDF (print to PDF)</button>
+                <a id="sheet-xml" download>Score · MusicXML</a>
+              </div>
+            </details>
+          </div>
         </div>
 
         <div id="sheet" class="sheet" aria-label="Sheet music" aria-busy="true"><p class="sheet-loading muted">Engraving the score…</p></div>
+        <p id="sync-note" class="sync-note hidden" role="status"></p>
         <p id="sheet-error" class="alert hidden" role="alert"></p>
         <div id="pages" class="pages"></div>
         <p id="sheet-note" class="muted small"></p>
 
-        <div class="row-actions" id="main-files"></div>
-        <div id="preview-wrap" class="panel hidden">
-          <h3>Piano preview</h3>
-          <audio id="preview" controls preload="metadata"></audio>
-        </div>
-        <details class="panel">
-          <summary>ABC notation</summary>
+        <details class="files-panel">
+          <summary>SheetSage2 files (<span id="file-count">0</span>)</summary>
           <pre id="abc"></pre>
-          <button id="copy-abc" type="button">Copy ABC</button>
-        </details>
-        <details class="panel">
-          <summary>All files from SheetSage2 (<span id="file-count">0</span>)</summary>
+          <div class="row-actions"><button id="copy-abc" class="pill" type="button">Copy ABC</button></div>
           <ul id="files" class="files"></ul>
         </details>
       </section>
     </article>
   </main>
-
-  <aside>
-    <h2>Captures</h2>
-    <ul id="clips" class="clips"></ul>
-  </aside>
 </div>
 <div id="print-root" aria-hidden="true"></div>
 <script type="module" src="clip.js"></script>

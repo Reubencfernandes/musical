@@ -697,7 +697,12 @@ export function toMusicXML(arranged, {title = 'Untitled', composer = '', arrange
     '<identification>',
     composer ? `<creator type="composer">${esc(composer)}</creator>` : '',
     arranger ? `<creator type="arranger">${esc(arranger)}</creator>` : '',
-    `<encoding><software>${esc(software)}</software><encoding-date>${new Date().toISOString().slice(0, 10)}</encoding-date></encoding>`,
+    // Editors such as MuseScore keep these fields: the notes were written by an AI model.
+    '<creator type="transcriber">SheetSage2 (AI)</creator>',
+    `<encoding><software>SheetSage2 (m-a-p/SheetSage2), AI music transcription</software><software>${esc(software)}</software>`
+      + `<encoding-date>${new Date().toISOString().slice(0, 10)}</encoding-date>`
+      + '<encoding-description>AI-generated transcription: melody and chords by SheetSage2 from a recording, piano arrangement generated from its chords. May contain errors.</encoding-description></encoding>',
+    '<miscellaneous><miscellaneous-field name="ai-generated">true</miscellaneous-field><miscellaneous-field name="ai-model">m-a-p/SheetSage2</miscellaneous-field></miscellaneous>',
     '</identification>',
     // The title block: title centred, then the artist and the transcription credit on the right.
     `<credit page="1"><credit-type>title</credit-type><credit-words justify="center" valign="top" font-size="22">${esc(title)}</credit-words></credit>`,

@@ -1,6 +1,17 @@
 // Runs a capture: the popup hands over the tab's audio stream, the offscreen
 // document records it, and the finished clip opens in its own page.
 const OFFSCREEN_URL = 'offscreen.html';
+
+// The toolbar button opens the side panel, which stays beside the video. The
+// click is handled here rather than by Chrome, because Chrome only lets an
+// extension capture a tab's sound after a click on its icon in that tab; a
+// panel Chrome opens by itself does not count.
+chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: false}).catch(() => {});
+chrome.action.onClicked.addListener((tab) => {
+  // Opening the panel must happen inside the click, before anything is awaited.
+  chrome.sidePanel.open({windowId: tab.windowId}).catch(() => {});
+  chrome.storage.session.set({invoked: {tabId: tab.id, at: Date.now()}});
+});
 const IDLE = {status: 'idle'};
 
 let state;
@@ -30,7 +41,7 @@ const toTab = (tabId, msg) => chrome.tabs.sendMessage(tabId, msg).catch(() => {}
 
 function badge(text) {
   chrome.action.setBadgeText({text});
-  if (text) chrome.action.setBadgeBackgroundColor({color: '#c62828'});
+  if (text) chrome.action.setBadgeBackgroundColor({color: '#fb5729'});
 }
 
 async function end(fields) {
@@ -89,9 +100,12 @@ const handlers = {
 
   async captured({id}) {
     const s = await current();
-    await end({status: 'idle', lastClip: id});
+    await end({status: 'idle', lastClip: id, lastTab: s.tabId});
+    // The side panel shows the score itself when it is open; otherwise a tab opens.
+    const panels = await chrome.runtime.getContexts({contextTypes: ['SIDE_PANEL']}).catch(() => []);
+    if (panels.length) return;
     const query = new URLSearchParams({id});
-    if (s.options?.transcribe) query.set('auto', '1');
+    query.set('auto', '1');
     const tab = s.tabId ? await chrome.tabs.get(s.tabId).catch(() => null) : null;
     await chrome.tabs.create({
       url: `clip.html?${query}`,

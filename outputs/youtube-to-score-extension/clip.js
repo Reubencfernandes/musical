@@ -2,15 +2,26 @@ import {getClip, putClip, deleteClip, listClips} from './db.js';
 import {transcribe, DEFAULT_SPACE} from './sheetsage.js';
 import {clock} from './time.js';
 import {readScore, arrange, toMusicXML, pickupUnits} from './score.js';
-import {engrave, measureTimes, follow} from './sheet.js';
+import {engrave, barAt, Highlighter, measureTimes} from './sheet.js';
+import {SheetPlayer, performance as perform} from './playback.js';
+import {animatePerformer} from './dots.js';
 import {songInfo} from './title.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const CREDIT = 'Transcribed by SheetSage';
+// Shown in Chrome's side panel beside the video, or full size in a tab.
+const inPanel = params.get('panel') === '1';
+const here = (query = {}) => `clip.html?${new URLSearchParams({...query, ...(inPanel ? {panel: '1'} : {})})}`;
+if (inPanel) {
+  document.body.classList.add('in-panel');
+  // If this capture was opened in the panel from a tab, the toolbar icon should still open the record view next time.
+  chrome.sidePanel?.setOptions({path: 'popup.html'}).catch(() => {});
+}
+const CREDIT = 'AI transcription by SheetSage2';
 const urls = [];
 let clip = null;
 let job = null;
+let stopPerformer = null;
 
 // The engraved score: what was read, how it is set out, and what is on screen.
 let native = null;
@@ -18,10 +29,13 @@ let timing = null;
 let sheet = null;
 let drawn = null;
 let drawToken = 0;
-let stopFollowing = () => {};
+let highlighter = null;
 let xmlUrl = '';
+let printed = false;
 let saveTimer = 0;
 let drawTimer = 0;
+
+const player = new SheetPlayer();
 
 /** Object URLs are made per render and released when the page re-renders. */
 function blobUrl(blob) {
@@ -42,24 +56,30 @@ function fileLink({name, blob}, label = name) {
   return a;
 }
 
+const icon = (button, name) => button.querySelector('use').setAttribute('href', `#i-${name}`);
+
 async function renderList() {
   const list = $('clips');
   list.replaceChildren();
   for (const c of await listClips()) {
     const li = document.createElement('li');
     const a = document.createElement('a');
-    a.href = `clip.html?id=${c.id}`;
+    a.href = here({id: c.id});
     if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = c.title || 'Untitled';
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = `${clock(c.start)} · ${Math.round(c.seconds)} s${c.scored ? ' · scored' : ''}`;
+    meta.append(`${clock(c.start)}–${clock(c.start + c.seconds)}`);
+    if (c.scored) meta.append(Object.assign(document.createElement('span'), {className: 'tag', textContent: 'Score'}));
+    meta.append(Object.assign(document.createElement('span'), {className: 'when', textContent: new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}));
+    a.title = c.title || 'Untitled';
     a.append(name, meta);
     li.append(a);
     list.append(li);
   }
+  $('clip-count').textContent = String(list.children.length || '');
   if (!list.children.length) {
     const li = document.createElement('li');
     li.className = 'muted small';
@@ -80,25 +100,38 @@ function keyLabel(name, transpose) {
 function syncControls(arranged) {
   $('sheet-title').value = sheet.title;
   $('sheet-artist').value = sheet.artist;
-  const canPiano = !arranged || arranged.hasChords;
+  const layout = arranged ? arranged.layout : sheet.layout;
   for (const button of document.querySelectorAll('[data-layout]')) {
-    const layout = arranged ? arranged.layout : sheet.layout;
     button.setAttribute('aria-checked', String(button.dataset.layout === layout));
     if (button.dataset.layout === 'piano') {
-      button.disabled = !canPiano;
-      button.title = canPiano ? '' : 'SheetSage2 found no chords to write a left hand from.';
+      button.disabled = arranged ? !arranged.hasChords : false;
+      button.title = button.disabled ? 'SheetSage2 found no chords to write a left hand from.' : '';
     }
   }
   $('sheet-hand').value = sheet.hand;
-  $('sheet-hand').disabled = arranged ? arranged.layout !== 'piano' : sheet.layout !== 'piano';
+  $('sheet-hand').disabled = layout !== 'piano';
   if (arranged) $('key-name').value = keyLabel(arranged.key.name, sheet.transpose);
   $('key-down').disabled = sheet.transpose <= -6;
   $('key-up').disabled = sheet.transpose >= 6;
   $('zoom-label').value = `${Math.round(sheet.zoom * 100)}%`;
   $('sheet').style.setProperty('--zoom', sheet.zoom);
-  $('sheet-note').textContent = arranged?.layout === 'lead'
-    ? 'Lead sheet: the melody SheetSage2 heard, with its chord symbols. Click a bar to play the recording from there.'
-    : 'Piano: the melody SheetSage2 heard, over a left hand written from its chords. Click a bar to play the recording from there.';
+  $('track-title').textContent = sheet.title || 'Score';
+  heading();
+  $('sheet-note').textContent = layout === 'lead'
+    ? 'Lead sheet: the tune SheetSage2 heard, with its chord symbols. Click a bar to play from there.'
+    : 'Piano: the tune SheetSage2 heard, over a left hand written from its chords. Click a bar to play from there.';
+}
+
+/** The page heading: the song's title and artist, or the video title before there is a sheet. */
+function heading() {
+  if (!clip) return;
+  const guess = songInfo(clip.title, clip.channel);
+  const title = (sheet?.title ?? guess.title).trim() || clip.title || 'Untitled capture';
+  const artist = (sheet?.artist ?? guess.artist).trim();
+  $('title').textContent = title;
+  $('title').title = clip.title || title;
+  $('artist-line').textContent = artist;
+  document.title = `${title} · YouTube to Score`;
 }
 
 function saveSoon() {
@@ -118,8 +151,7 @@ function drawSoon(delay = 450) {
 /** SheetSage2's own rendering, for scores the arranger cannot read. */
 function showOriginalPages(result, reason) {
   $('sheet').replaceChildren();
-  document.querySelector('.sheet-bar').classList.add('hidden');
-  $('sheet-settings').classList.add('hidden');
+  for (const el of document.querySelectorAll('.transport, .score-toolbar, #sheet-settings')) el.classList.add('hidden');
   $('sheet-error').textContent = `${reason} Showing SheetSage2's own layout instead.`;
   $('sheet-error').classList.remove('hidden');
   $('pages').replaceChildren(...result.pages.filter(Boolean).map((page, i) => {
@@ -132,14 +164,12 @@ function showOriginalPages(result, reason) {
 
 async function setupSheet(result) {
   const token = ++drawToken;
-  stopFollowing();
   $('pages').replaceChildren();
   $('sheet-error').classList.add('hidden');
-  document.querySelector('.sheet-bar').classList.remove('hidden');
-  $('sheet-settings').classList.remove('hidden');
+  for (const el of document.querySelectorAll('.transport, .score-toolbar, #sheet-settings')) el.classList.remove('hidden');
   try {
     native = readScore(result.abc);
-  } catch (err) {
+  } catch {
     native = null;
     showOriginalPages(result, 'This score could not be re-engraved.');
     return;
@@ -152,7 +182,8 @@ async function setupSheet(result) {
   if (token !== drawToken) return;
   timing = {pickup: pickupUnits(report.diagnostics, native.grid), downbeats, duration: report.duration_seconds || clip.seconds};
   const guess = songInfo(clip.title, clip.channel);
-  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, ...clip.sheet};
+  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, ...clip.sheet};
+  $('speed').value = String(sheet.speed);
   syncControls(null);
   await drawSheet();
 }
@@ -160,8 +191,6 @@ async function setupSheet(result) {
 async function drawSheet() {
   if (!native || !sheet) return;
   const token = ++drawToken;
-  stopFollowing();
-  stopFollowing = () => {};
   const container = $('sheet');
   container.setAttribute('aria-busy', 'true');
   try {
@@ -170,6 +199,7 @@ async function drawSheet() {
     const xml = toMusicXML(arranged, {title: header.title, composer: header.composer, arranger: CREDIT});
     const svgs = await engrave(xml, header);
     if (token !== drawToken) return;
+    highlighter?.destroy();
     container.replaceChildren(...svgs.map((svg, i) => {
       const page = document.createElement('div');
       page.className = 'page';
@@ -178,15 +208,20 @@ async function drawSheet() {
       if (i) page.append(Object.assign(document.createElement('span'), {className: 'page-number', textContent: String(i + 1)}));
       return page;
     }));
-    drawn = {svgs, xml, header};
+    highlighter = new Highlighter(container, {topInset: 96});
+    highlighter.follow = $('follow').checked;
+    drawn = {svgs, xml, header, arranged};
+    if (sync) await stopSync();
+    await player.load(perform(arranged, sheet.speed));
     if (xmlUrl) URL.revokeObjectURL(xmlUrl);
     xmlUrl = URL.createObjectURL(new Blob([xml], {type: 'application/vnd.recordare.musicxml+xml'}));
     $('sheet-xml').href = xmlUrl;
     $('sheet-xml').download = `${safeName(header.title)}.musicxml`;
     syncControls(arranged);
-    if (timing.downbeats.length) {
-      const times = measureTimes(arranged.measures, timing.downbeats, timing.duration);
-      stopFollowing = follow(container, times, [$('player'), $('preview')], {onSeek: (audio) => audio.play().catch(() => {})});
+    updateTransport();
+    if (params.get('print') === '1' && !printed) {
+      printed = true;
+      setTimeout(() => window.print(), 300);
     }
   } catch (err) {
     if (token !== drawToken) return;
@@ -196,30 +231,67 @@ async function drawSheet() {
   }
 }
 
+// ---- playback ------------------------------------------------------------------
+
+/** The bar being played, or -1. */
+function litBar() {
+  return player.piece && (player.playing || player.position > 0) ? barAt(player.piece.bars, player.position) : -1;
+}
+
+function updateTransport() {
+  const total = player.duration;
+  const at = player.position;
+  $('progress-fill').style.width = total ? `${Math.min(100, (at / total) * 100)}%` : '0%';
+  $('elapsed').textContent = clock(at);
+  $('remaining').textContent = total ? `−${clock(Math.max(0, total - at))}` : 'SCORE';
+  $('seek').max = String(total || 1);
+  $('seek').value = String(Math.min(at, total || 1));
+  $('play').setAttribute('aria-label', player.playing ? 'Pause score' : 'Play score');
+  icon($('play'), player.playing ? 'pause' : 'play');
+}
+
+// One loop keeps the transport and the lit bar in step with the music.
+(function frame() {
+  if (player.playing) {
+    updateTransport();
+    highlighter?.show(litBar());
+  }
+  requestAnimationFrame(frame);
+})();
+
+async function playSheet(at) {
+  $('play').setAttribute('aria-busy', 'true');
+  highlighter?.resume();
+  try { await player.play(at); } finally { $('play').removeAttribute('aria-busy'); }
+  updateTransport();
+}
+
+player.onend = () => { updateTransport(); highlighter?.clear(); };
+
+// ---- page ----------------------------------------------------------------------
+
 function renderResult(result) {
   $('result').classList.toggle('hidden', !result);
   if (!result) return;
   // Keep only what the Space adds after its stock "Finished … Download your files below." line.
   const warning = result.status.replace(/^Finished in [^.]*\.\s*(Download your files below\.)?\s*/, '');
-  $('result-note').textContent = `Transcribed ${new Date(result.at).toLocaleString()}${warning ? ` · ${warning}` : ''}`;
+  $('done').textContent = `Transcribed ${new Date(result.at).toLocaleString()}${warning ? ` · ${warning}` : ''}`;
 
-  const main = $('main-files');
-  main.replaceChildren();
+  // SheetSage2's own files join the Download menu after the engraved score.
+  const items = $('download-items');
+  for (const el of items.querySelectorAll('.sheetsage')) el.remove();
   const byName = (n) => result.files.find((f) => f?.name === n);
-  const picks = [
-    [byName('transcription.mid'), 'MIDI'],
-    [byName('score.abc'), 'ABC'],
-    [result.files.find((f) => f?.name.endsWith('.zip')), 'All SheetSage2 files (ZIP)'],
-  ];
-  for (const [file, label] of picks) {
+  for (const [file, label] of [
+    [byName('transcription.mid'), 'SheetSage2 · MIDI'],
+    [byName('score.abc'), 'SheetSage2 · ABC'],
+    [result.pdf, 'SheetSage2 · original PDF'],
+    [result.files.find((f) => f?.name.endsWith('.zip')), 'SheetSage2 · all files (ZIP)'],
+  ]) {
     if (!file) continue;
     const a = fileLink(file, label);
-    a.className = 'button';
-    main.append(a);
+    a.className = 'sheetsage';
+    items.append(a);
   }
-
-  $('preview-wrap').classList.toggle('hidden', !result.preview);
-  if (result.preview) $('preview').src = blobUrl(result.preview.blob);
 
   $('abc').textContent = result.abc || 'No ABC notation was returned.';
   const files = result.files.filter(Boolean);
@@ -238,35 +310,33 @@ function render() {
   $('clip').classList.toggle('hidden', !clip);
   if (!clip) return;
 
-  document.title = `${clip.title || 'Capture'} · YouTube to Score`;
-  $('title').textContent = clip.title || 'Untitled capture';
-  $('range').textContent = `${clock(clip.start)}–${clock(clip.start + clip.seconds)} · ${Math.round(clip.seconds)} s`;
+  heading();
+  $('range').textContent = `${clock(clip.start)}–${clock(clip.start + clip.seconds)} of the video`;
   const source = new URL(clip.url);
   source.searchParams.set('t', `${Math.floor(clip.start)}s`);
   $('source').href = source.href;
 
   const audio = blobUrl(clip.audio);
-  $('player').src = audio;
   $('download-mp3').href = audio;
   $('download-mp3').download = `${safeName(clip.title)} (${clock(clip.start).replace(/:/g, '.')}).mp3`;
 
-  $('melody').checked = clip.options?.melody ?? false;
-  $('piano').checked = clip.options?.piano ?? true;
   const tooShort = clip.seconds < 5;
   $('transcribe').disabled = tooShort;
   $('transcribe').textContent = clip.result ? 'Transcribe again' : 'Transcribe with SheetSage2';
-  if (tooShort) setStatus('SheetSage2 needs at least 5 seconds. Record a longer stretch.');
+  if (tooShort) $('done').textContent = 'SheetSage2 needs at least 5 seconds. Record a longer part.';
   renderResult(clip.result);
-}
-
-function setStatus(text, busy = false) {
-  $('status').textContent = text;
-  $('status').classList.toggle('busy', busy);
 }
 
 function setError(text) {
   $('error').textContent = text || '';
   $('error').classList.toggle('hidden', !text);
+}
+
+function busy(on) {
+  $('processing').classList.toggle('hidden', !on);
+  $('transcribe-row').classList.toggle('hidden', on);
+  if (on) stopPerformer ??= animatePerformer($('performer'));
+  else if (stopPerformer) { stopPerformer(); stopPerformer = null; }
 }
 
 async function run() {
@@ -276,13 +346,13 @@ async function run() {
   const controller = new AbortController();
   const started = Date.now();
   let label = 'Starting';
-  const timer = setInterval(() => setStatus(`${label} · ${clock((Date.now() - started) / 1000)}`, true), 1000);
+  const status = () => { $('status').textContent = `${label} · ${clock((Date.now() - started) / 1000)}`; };
+  const timer = setInterval(status, 1000);
   job = controller;
-  $('transcribe').disabled = true;
-  $('abort').classList.remove('hidden');
-  setStatus(label, true);
+  busy(true);
+  status();
   try {
-    const options = {melody: $('melody').checked, piano: $('piano').checked};
+    const options = {melody: false, piano: false};
     const result = await transcribe({
       space: space || DEFAULT_SPACE,
       token,
@@ -292,16 +362,14 @@ async function run() {
       melodyOnly: options.melody,
       piano: options.piano,
       signal: controller.signal,
-      onStatus: (text) => { label = text; setStatus(`${label} · ${clock((Date.now() - started) / 1000)}`, true); },
+      onStatus: (text) => { label = text; status(); },
     });
     clip = {...clip, options: {...clip.options, ...options}, result: {...result, at: Date.now()}};
     await putClip(clip);
     render();
     renderList();
-    setStatus(`Done in ${clock((Date.now() - started) / 1000)}`);
     $('result').scrollIntoView({behavior: 'smooth', block: 'start'});
   } catch (err) {
-    setStatus('');
     if (err.name !== 'AbortError') {
       setError(err instanceof TypeError
         ? `Could not reach the Space (${err.message}). Check your connection and the Space name in the extension settings.`
@@ -310,8 +378,8 @@ async function run() {
   } finally {
     clearInterval(timer);
     job = null;
+    busy(false);
     $('transcribe').disabled = clip.seconds < 5;
-    $('abort').classList.add('hidden');
   }
 }
 
@@ -321,14 +389,15 @@ async function init() {
   if (!clip && !id) {
     const [latest] = await listClips();
     if (latest) {
-      history.replaceState(null, '', `clip.html?id=${latest.id}`);
+      history.replaceState(null, '', here({id: latest.id}));
       clip = await getClip(latest.id);
     }
   }
   render();
   renderList();
-  if (clip && params.get('auto') === '1' && clip.seconds >= 5) {
-    history.replaceState(null, '', `clip.html?id=${clip.id}`);
+  // Fresh captures transcribe on arrival; one that already has a score just shows it.
+  if (clip && params.get('auto') === '1' && clip.seconds >= 5 && !clip.result) {
+    history.replaceState(null, '', here({id: clip.id}));
     run();
   }
 }
@@ -346,13 +415,163 @@ $('delete').addEventListener('click', async () => {
   if (!clip) return;
   job?.abort();
   await deleteClip(clip.id);
-  location.replace('clip.html');
+  location.replace(here());
 });
 
+// In the side panel, score settings fold away until asked for.
+$('settings-toggle').addEventListener('click', () => {
+  const open = $('sheet-settings').classList.toggle('open');
+  $('settings-toggle').setAttribute('aria-expanded', String(open));
+});
+$('panel-captures').addEventListener('click', () => $('sidebar-toggle').click());
+
+// The captures sidebar: a drawer on narrow windows and in the panel, a column
+// that can be closed (and remembered closed) on the full page.
+const shell = document.querySelector('.shell');
+const drawer = () => inPanel || matchMedia('(max-width: 1000px)').matches;
+const setDrawer = (open) => {
+  $('sidebar').classList.toggle('open', open);
+  $('sidebar-toggle').setAttribute('aria-expanded', String(open));
+};
+const setCollapsed = (closed) => {
+  shell.classList.toggle('collapsed', closed);
+  try { localStorage.setItem('captures-closed', closed ? '1' : ''); } catch {}
+};
+try { if (!inPanel && localStorage.getItem('captures-closed')) shell.classList.add('collapsed'); } catch {}
+$('sidebar-toggle').addEventListener('click', () => {
+  if (shell.classList.contains('collapsed') && !drawer()) setCollapsed(false);
+  else setDrawer(!$('sidebar').classList.contains('open'));
+});
+$('sidebar-close').addEventListener('click', () => (drawer() ? setDrawer(false) : setCollapsed(true)));
+$('sidebar-close').textContent = inPanel ? '✕' : '«';
+addEventListener('click', (e) => {
+  if ($('sidebar').classList.contains('open') && !$('sidebar').contains(e.target) && !e.target.closest('#sidebar-toggle, #panel-captures')) setDrawer(false);
+});
+$('close-panel').addEventListener('click', () => window.close());
+
+// ---- playing along with the video ----------------------------------------------
+
+let sync = null; // {tabId, speed}
+
+function syncNote(text) {
+  $('sync-note').textContent = text || '';
+  $('sync-note').classList.toggle('hidden', !text);
+}
+
+/** When each bar sounds in the recording, from SheetSage2's downbeats. */
+function recordingTimes() {
+  return drawn && timing?.downbeats.length ? measureTimes(drawn.arranged.measures, timing.downbeats, timing.duration) : null;
+}
+
+/** The YouTube tab showing this capture's video, opened at the capture's start if none is. */
+async function videoTab() {
+  const id = new URL(clip.url).searchParams.get('v');
+  const tabs = await chrome.tabs.query({url: ['https://www.youtube.com/watch*', 'https://music.youtube.com/watch*']});
+  let tab = tabs.find((t) => new URL(t.url).searchParams.get('v') === id);
+  if (!tab) {
+    const url = new URL(clip.url);
+    url.searchParams.set('t', `${Math.floor(clip.start)}s`);
+    tab = await chrome.tabs.create({url: url.href});
+    await new Promise((resolve) => {
+      const done = (tabId, change) => {
+        if (tabId === tab.id && change.status === 'complete') { chrome.tabs.onUpdated.removeListener(done); resolve(); }
+      };
+      chrome.tabs.onUpdated.addListener(done);
+      setTimeout(resolve, 20000);
+    });
+  }
+  // Make sure the page script is there and the player is ready.
+  for (let i = 0; i < 40; i++) {
+    const info = await chrome.tabs.sendMessage(tab.id, {type: 'info'}).catch(async () => {
+      await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['content.js']}).catch(() => {});
+      return null;
+    });
+    if (info?.ready && info.duration) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return tab;
+}
+
+async function videoControl(control) {
+  if (!sync) return;
+  const res = await chrome.tabs.sendMessage(sync.tabId, {type: 'sync-control', ...control}).catch(() => null);
+  if (!res?.ok) stopSync();
+}
+
+async function startSync() {
+  const times = recordingTimes();
+  if (!times) return syncNote('This capture has no bar timing from SheetSage2, so it cannot follow the video. Transcribe it again to add it.');
+  // In a full tab the video is elsewhere: show it with the score in the side panel instead.
+  if (!inPanel) {
+    const tab = await videoTab();
+    await chrome.tabs.update(tab.id, {active: true});
+    await chrome.sidePanel.setOptions({path: `clip.html?${new URLSearchParams({id: clip.id, panel: '1'})}`, enabled: true}).catch(() => {});
+    chrome.sidePanel.open({windowId: tab.windowId}).catch(() => {});
+    return;
+  }
+  $('with-video').setAttribute('aria-busy', 'true');
+  try {
+    player.pause();
+    const tab = await videoTab();
+    const speed = sheet.speed;
+    await player.load(perform(drawn.arranged, speed, times));
+    sync = {tabId: tab.id, speed};
+    $('with-video').setAttribute('aria-pressed', 'true');
+    syncNote('Playing with the video, which is muted. Pause, seek or skip in either place; press With video again to stop.');
+    highlighter?.resume();
+    const res = await chrome.tabs.sendMessage(tab.id, {type: 'sync-start', at: clip.start + player.position * speed, rate: speed});
+    if (res?.error) throw new Error(res.error);
+  } catch (err) {
+    await stopSync();
+    syncNote(`Could not play along with the video (${err.message}).`);
+  } finally {
+    $('with-video').removeAttribute('aria-busy');
+  }
+}
+
+async function stopSync({pause = true} = {}) {
+  const was = sync;
+  sync = null;
+  $('with-video').setAttribute('aria-pressed', 'false');
+  syncNote('');
+  player.pause();
+  if (was) chrome.tabs.sendMessage(was.tabId, {type: 'sync-stop', pause}).catch(() => {});
+  if (drawn) await player.load(perform(drawn.arranged, sheet.speed));
+  updateTransport();
+}
+
+$('with-video').addEventListener('click', () => (sync ? stopSync() : startSync()));
+
+// The video drives the sheet: follow its time, pauses, seeks and speed.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg.type !== 'video-time' || !sync || sender.tab?.id !== sync.tabId || !player.piece) return;
+  if (msg.rate && Math.abs(msg.rate - sync.speed) > 0.01) {
+    sync.speed = msg.rate;
+    player.load(perform(drawn.arranged, msg.rate, recordingTimes()));
+    return;
+  }
+  const at = (msg.time - clip.start) / sync.speed;
+  if (at > player.duration + 0.3) { stopSync(); return; }
+  if (msg.paused || at < 0) {
+    if (player.playing) player.pause();
+    player.seek(Math.max(0, at));
+  } else if (!player.playing || Math.abs(player.position - at) > 0.15) {
+    player.play(at);
+  }
+  updateTransport();
+  highlighter?.show(at >= 0 ? barAt(player.piece.bars, at) : -1);
+});
+
+// Leaving the page gives the video its sound back.
+addEventListener('pagehide', () => { if (sync) chrome.tabs.sendMessage(sync.tabId, {type: 'sync-stop'}).catch(() => {}); });
+
+// Score settings
 for (const [id, field] of [['sheet-title', 'title'], ['sheet-artist', 'artist']]) {
   $(id).addEventListener('input', () => {
     if (!sheet) return;
     sheet[field] = $(id).value;
+    $('track-title').textContent = sheet.title || 'Score';
+    heading();
     saveSoon();
     drawSoon();
   });
@@ -377,31 +596,74 @@ for (const [id, step] of [['key-down', -1], ['key-up', 1]]) {
     drawSheet();
   });
 }
+
+// Transport
+$('play').addEventListener('click', () => {
+  if (sync) return videoControl({action: player.playing ? 'pause' : 'play'});
+  return player.playing ? (player.pause(), updateTransport()) : playSheet();
+});
+$('restart').addEventListener('click', () => {
+  if (sync) return videoControl({action: 'seek', at: clip.start});
+  player.seek(0); highlighter?.resume(); highlighter?.show(player.playing ? 0 : -1); updateTransport();
+});
+$('seek').addEventListener('input', () => {
+  if (sync) return videoControl({action: 'seek', at: clip.start + Number($('seek').value) * sync.speed});
+  player.seek(Number($('seek').value));
+  highlighter?.resume();
+  highlighter?.show(litBar());
+  updateTransport();
+});
+$('loop').addEventListener('click', () => {
+  player.loop = !player.loop;
+  $('loop').setAttribute('aria-pressed', String(player.loop));
+});
+$('speed').addEventListener('change', async () => {
+  sheet.speed = Number($('speed').value);
+  saveSoon();
+  if (sync) return videoControl({rate: sheet.speed});
+  if (drawn) await player.load(perform(drawn.arranged, sheet.speed));
+  updateTransport();
+});
+$('volume').addEventListener('input', () => player.setVolume(Number($('volume').value)));
+
+// Clicking a bar plays the sheet from it.
+$('sheet').addEventListener('click', (e) => {
+  const index = highlighter?.indexOf(e.target) ?? -1;
+  if (index < 0 || !player.piece) return;
+  highlighter.resume();
+  if (sync) videoControl({action: 'seek', at: clip.start + player.piece.bars[index].start * sync.speed});
+  else playSheet(player.piece.bars[index].start);
+  highlighter.show(index);
+});
+
+// Toolbar
+$('follow').addEventListener('change', () => {
+  if (!highlighter) return;
+  highlighter.follow = $('follow').checked;
+  if (highlighter.follow) highlighter.resume();
+});
 for (const [id, step] of [['zoom-out', -0.1], ['zoom-in', 0.1]]) {
   $(id).addEventListener('click', () => {
     sheet.zoom = Math.round(Math.max(0.6, Math.min(1.6, sheet.zoom + step)) * 10) / 10;
-    syncControls(null);
+    syncControls(drawn?.arranged ?? null);
     saveSoon();
   });
 }
-
-// Play along: the original recording drives the highlighted bar.
-const player = $('player');
-$('sheet-play').addEventListener('click', () => (player.paused ? player.play() : player.pause()));
-const playState = () => {
-  const playing = !player.paused;
-  $('sheet-play').setAttribute('aria-pressed', String(playing));
-  document.querySelector('#sheet-play .play-text').textContent = playing ? 'Pause' : 'Play along';
+const print = () => {
+  document.querySelector('.download-menu').open = false;
+  if (inPanel && clip) chrome.tabs.create({url: `clip.html?${new URLSearchParams({id: clip.id, print: '1'})}`});
+  else window.print();
 };
-player.addEventListener('play', playState);
-player.addEventListener('pause', playState);
-player.addEventListener('timeupdate', () => {
-  $('sheet-time').textContent = `${clock(player.currentTime)} / ${clock(player.duration || clip?.seconds || 0)}`;
+$('open-tab').addEventListener('click', () => clip && chrome.tabs.create({url: `clip.html?id=${clip.id}`}));
+$('sheet-print').addEventListener('click', print);
+$('download-pdf').addEventListener('click', print);
+addEventListener('click', (e) => {
+  const menu = document.querySelector('.download-menu');
+  if (menu.open && !menu.contains(e.target)) menu.open = false;
 });
 
 // Printing (and Save as PDF) uses clean copies of the pages, named after the song.
 let titleBeforePrint = '';
-$('sheet-print').addEventListener('click', () => window.print());
 addEventListener('beforeprint', () => {
   if (!drawn) return;
   $('print-root').replaceChildren(...drawn.svgs.map((svg, i) => {
@@ -412,7 +674,8 @@ addEventListener('beforeprint', () => {
     return page;
   }));
   titleBeforePrint = document.title;
-  document.title = safeName([drawn.header.title, drawn.header.composer].filter(Boolean).join(' - '));
+  // The PDF takes its name and title from the page: say it is an AI transcription there too.
+  document.title = `${safeName([drawn.header.title, drawn.header.composer].filter(Boolean).join(' - '))} (AI transcription, SheetSage2)`;
 });
 addEventListener('afterprint', () => {
   $('print-root').replaceChildren();

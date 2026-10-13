@@ -1,65 +1,99 @@
-:root {
-  color-scheme: light dark;
-  --bg: #f7f7f5;
-  --panel: #ffffff;
-  --ink: #1d1f1e;
-  --muted: #5f6662;
-  --line: #dfe2df;
-  --accent: #0f7a6c;
-  --accent-ink: #ffffff;
-  --accent-soft: #e2f2ef;
-  --danger: #c62828;
-  --danger-soft: #fdeceb;
-  --radius: 10px;
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+/* The Kiku AI / Score Studio look: near-black surfaces, one orange accent,
+   Supreme for text and Bespoke Stencil for headings, pill buttons. */
+@font-face { font-family: Supreme; src: url('fonts/supreme-regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Bespoke Stencil'; src: url('fonts/bespoke-stencil-bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
 
-@media (prefers-color-scheme: dark) {
+:root {
+  color-scheme: dark;
+  --paper: #101010;
+  --panel: #181818;
+  --surface: #232323;
+  --ink: #f5f4f2;
+  --muted: #a4a39f;
+  --line: #333331;
+  --accent: #fb5729;
+  --accent-hover: #ed491d;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --danger: #ff6b5b;
+  --transport: #252628;
+  --transport-ink: #cfd0d2;
+  --track: #353638;
+  --sans: Supreme, Arial, Helvetica, sans-serif;
+  --display: 'Bespoke Stencil', Supreme, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 14px/1.5 var(--sans);
+}
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #151716;
-    --panel: #1e2120;
-    --ink: #eceeed;
-    --muted: #a2aaa6;
-    --line: #333836;
-    --accent: #3fbfa9;
-    --accent-ink: #08201c;
-    --accent-soft: #19332e;
-    --danger: #ef7b74;
-    --danger-soft: #3a1f1e;
+    color-scheme: light;
+    --paper: #fff;
+    --panel: #fff;
+    --surface: #f5f4f1;
+    --ink: #20201e;
+    --muted: #716f69;
+    --line: #dedcd6;
+    --danger: #c8321c;
   }
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); }
 a { color: var(--accent); }
-h1, h2 { margin: 0; line-height: 1.25; }
+h1, h2, h3 { margin: 0; font-family: var(--display); font-weight: 700; letter-spacing: -.025em; line-height: 1.2; }
+p { margin: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .hidden { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+:is(button, a, input, select, summary, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-button, .button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 34px; padding: 0 14px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+/* Buttons: an orange pill for the main action, quiet pills for the rest. */
+.button, .pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font-size: 13px; text-decoration: none; white-space: nowrap; transition: border-color .2s, background .2s, transform .2s;
 }
-button:hover, .button:hover { border-color: var(--accent); }
-button:disabled { opacity: .5; cursor: default; }
-button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-button.danger { color: var(--danger); }
-button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); font-weight: 500; }
+.pill:hover:not(:disabled), .button:hover { border-color: var(--accent); background: var(--panel); }
+.pill.primary {
+  border: 0; background: var(--accent); color: #fff;
+  box-shadow: inset 0 1px 1px #ffffff50, 0 4px 14px #0002;
+}
+.pill.primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+.pill.wide { width: 100%; min-height: 46px; font-size: 14px; }
+.text-button { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 7px; }
+.text-button:hover { color: var(--ink); }
+.text-button.danger:hover { color: var(--danger); }
 
-input[type=text], input[type=number], input[type=password] {
-  width: 100%; min-height: 34px; padding: 0 10px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit;
+/* Inputs */
+.input, input[type=text], input[type=password], select {
+  width: 100%; min-height: 40px; padding: 0 13px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 14px;
 }
-input:focus-visible, button:focus-visible, .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-label { display: block; }
-.check { display: flex; align-items: center; gap: 8px; }
+input::placeholder { color: #858580; }
+select { padding-right: 8px; }
+.check { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .check input { accent-color: var(--accent); margin: 0; }
+input[type=range] { accent-color: var(--accent); }
 
-.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-.bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+/* Mode chips (Score Studio's mode switch) */
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 13px;
+  transition: border-color .2s, color .2s, background .2s;
+}
+.chip:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+.chip[aria-checked=true], .chip[aria-pressed=true] { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 
-.alert { padding: 10px 12px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); }
-.note { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); }
+/* Status labels and notices */
+.process-label {
+  display: inline-block; font-family: var(--mono); letter-spacing: 2px; font-size: 11px; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft); padding: 7px 11px; border-radius: 3px;
+}
+.alert { padding: 11px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); font-size: 13px; line-height: 1.55; }
+
+/* Dot-grid canvases (waveforms, timelines, performers) take the accent from CSS. */
+canvas.dots { display: block; width: 100%; }
