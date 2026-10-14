@@ -53,7 +53,40 @@ export async function session(){
  const value=unseal<Session>((await cookies()).get(SESSION_COOKIE)?.value);
  return value&&typeof value.token==='string'&&value.expires>Date.now()&&value.user?.id?value:null;
 }
+/**
+ * Native apps (the Kiku AI Flutter app) sign in with Hugging Face themselves
+ * and send the user's own token as a bearer header instead of a cookie. The
+ * token is checked with Hugging Face and the answer kept for a few minutes, so
+ * a job's many requests cost one check. No cookie is involved, so a forged
+ * cross-site request has nothing to ride on and the origin check is not needed.
+ */
+const BEARER_TTL=5*60*1000;
+const bearerStore=globalThis as typeof globalThis & {kikuBearers?:Map<string,{session:Session;checked:number}>};
+const bearers=bearerStore.kikuBearers??=new Map();
+async function bearerSession(header:string):Promise<Session|null>{
+ const token=/^Bearer\s+(hf_[A-Za-z0-9_-]{20,250})$/i.exec(header.trim())?.[1];
+ if(!token)return null;
+ const key=createHash('sha256').update(token).digest('base64url'),known=bearers.get(key);
+ if(known&&Date.now()-known.checked<BEARER_TTL)return known.session;
+ bearers.delete(key);
+ try{
+  const response=await fetch('https://huggingface.co/api/whoami-v2',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:AbortSignal.timeout(15000)});
+  if(!response.ok)return null;
+  const who=await response.json();
+  if(who?.type!=='user'||typeof who.id!=='string'||typeof who.name!=='string')return null;
+  const handle=who.name.slice(0,100);
+  const current:Session={token,expires:Date.now()+BEARER_TTL,user:{id:who.id,name:handle,handle}};
+  if(bearers.size>=1000)bearers.delete(bearers.keys().next().value!);
+  bearers.set(key,{session:current,checked:Date.now()});
+  return current;
+ }catch{return null;}
+}
 export async function authorize(req:Request){
+ const header=req.headers.get('authorization');
+ if(header){
+  const app=await bearerSession(header);
+  return app?{session:app} as const:{error:Response.json({error:'Sign in with Hugging Face to continue.',signIn:true},{status:401})} as const;
+ }
  const user=await session();
  if(!user)return {error:Response.json({error:'Sign in with Hugging Face to continue.',signIn:true},{status:401})} as const;
  if(req.method!=='GET'&&(req.headers.get('origin')!==appOrigin()||req.headers.get('sec-fetch-site')==='cross-site'))

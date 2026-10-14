@@ -11,7 +11,8 @@ export function GET(){
  const origin=appOrigin();
  return Response.json({
   client_id:origin+'/oauth/client',client_name:'Kiku AI',client_uri:origin,
-  redirect_uris:[origin+'/auth/callback','http://localhost/auth/callback','http://127.0.0.1/auth/callback'],
+  // The Kiku AI Flutter app signs in with this client too, coming back through its own URL scheme.
+  redirect_uris:[origin+'/auth/callback','http://localhost/auth/callback','http://127.0.0.1/auth/callback','kikuai://oauth/callback'],
   token_endpoint_auth_method:'none',grant_types:['authorization_code'],response_types:['code'],
   scope:SCOPES.storage,
  },{headers:{'Cache-Control':'public, max-age=300'}});

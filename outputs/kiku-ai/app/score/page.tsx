@@ -29,7 +29,7 @@ export default function Home(){
  useEffect(()=>{
   const id=new URLSearchParams(location.search).get('saved');if(!id||!user||stage!=='input'||result)return;
   let active=true;setStage('processing');setMessage('Opening your score…');
-  Promise.all([loadScore(id),scoreAudio(id)]).then(([score,audio])=>{
+  loadScore(id).then(async score=>[score,score&&await scoreAudio(score)] as const).then(([score,audio])=>{
    if(!active)return;if(!score)throw new Error('That score was not found in your library.');
    if(localURL.current)URL.revokeObjectURL(localURL.current);localURL.current=audio?URL.createObjectURL(audio):null;
    setResult({abc:score.abc,status:'',downloads:[],timing:score.timing});setSource({title:score.title,audioUrl:localURL.current||undefined});setSaveNote('saved');setStage('score');

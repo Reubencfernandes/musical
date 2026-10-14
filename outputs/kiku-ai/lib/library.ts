@@ -15,6 +15,9 @@ import {clearCovers} from '@/lib/song-covers';
  *   projects/<id>/project.json              a studio project
  *   projects/<id>/audio/<buffer>.wav        its audio, uploaded once per buffer
  *   scores/<id>.json + scores/<id>.mp3      a transcription and its recording
+ *
+ * The Flutter app has no MP3 encoder, so its songs and scores keep their audio
+ * as FLAC or WAV and name the file in the JSON's `audio` field.
  */
 export const LIBRARY='kiku-ai-library';
 
@@ -22,11 +25,22 @@ export const LIBRARY='kiku-ai-library';
 export class NeedsStorage extends Error{constructor(){super('Allow Kiku AI to save to your Hugging Face account.');}}
 
 export type Song={id:string;title:string;caption:string;lyrics:string;instrumental:boolean;model:string;seed?:number;duration:number;createdAt:string;meta?:Meta;idea?:string;
- cover?:{model:'carlofkl/DreamLite-base';license:'CC-BY-NC-4.0';seed?:number}};
+ cover?:{model:'carlofkl/DreamLite-base';license:'CC-BY-NC-4.0';seed?:number};
+ /** The audio's path when it is not songs/<id>.mp3 (songs saved by the Flutter app). */
+ audio?:string};
 export type SavedProject={id:string;name:string;createdAt:string;updatedAt:string;duration:number;tracks:number;project:Project;
  /** Buffer key to its file and shape, so the studio can rebuild the project. */
  audio:Record<string,{path:string}>};
-export type SavedScore={id:string;title:string;createdAt:string;abc:string;timing?:ScoreTiming;duration:number};
+export type SavedScore={id:string;title:string;createdAt:string;abc:string;timing?:ScoreTiming;duration:number;
+ /** The recording's path when it is not scores/<id>.mp3 (scores saved by the Flutter app). */
+ audio?:string};
+
+const AUDIO_TYPES:Record<string,string>={mp3:'audio/mpeg',flac:'audio/flac',wav:'audio/wav',m4a:'audio/mp4',ogg:'audio/ogg'};
+/** The audio file of a song or score: its own file in its folder, never a path elsewhere in the repo. */
+function audioPath(folder:'songs'|'scores',item:{id:string;audio?:string}){
+ const named=item.audio,extension=named?.split('.').pop()?.toLowerCase()||'';
+ return named&&named===`${folder}/${item.id}.${extension}`&&AUDIO_TYPES[extension]?named:`${folder}/${item.id}.mp3`;
+}
 
 export const newId=()=>Date.now().toString(36)+'-'+crypto.randomUUID().slice(0,8);
 
@@ -69,7 +83,7 @@ async function read(path:string){
  try{
   const file=await downloadFile({repo,accessToken,path});
   // Hub's WebBlob fetches lazily; native object URLs otherwise see an empty blob.
-  return file?new Blob([await file.arrayBuffer()],{type:path.endsWith('.webp')?'image/webp':path.endsWith('.mp3')?'audio/mpeg':file.type}):null;
+  return file?new Blob([await file.arrayBuffer()],{type:path.endsWith('.webp')?'image/webp':AUDIO_TYPES[path.split('.').pop()||'']||file.type}):null;
  }
  catch(error){if([401,403,404].includes(status(error)))return null;throw error;}
 }
@@ -87,8 +101,8 @@ const LIMIT=60;
 
 /** Persist metadata, never page-only audio/image blobs or UI state. */
 function songJson(song:Song){
- const {id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover}=song;
- return json({id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover});
+ const {id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio}=song;
+ return json({id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio});
 }
 const songWrites=new Map<string,Promise<unknown>>();
 function writeSong<T>(id:string,work:()=>Promise<T>):Promise<T>{
@@ -111,12 +125,12 @@ export async function listSongs(){
  const files=(await folder('songs')).filter(f=>f.path.endsWith('.json')).slice(0,LIMIT);
  return (await Promise.all(files.map(f=>readJson<Song>(f.path).catch(()=>null)))).filter((s):s is Song=>!!s);
 }
-export async function songAudio(id:string){return read(`songs/${id}.mp3`);}
+export async function songAudio(song:{id:string;audio?:string}){return read(audioPath('songs',song));}
 export async function songCover(id:string){return read(`songs/${id}.webp`);}
 export async function loadSong(id:string){return readJson<Song>(`songs/${id}.json`);}
 export async function deleteSong(song:Song){await writeSong(song.id,async()=>{
  const current=await loadSong(song.id);
- await remove([`songs/${song.id}.json`,`songs/${song.id}.mp3`,...(current?.cover?[`songs/${song.id}.webp`]:[])],'Delete song: '+song.title);
+ await remove([`songs/${song.id}.json`,audioPath('songs',current??song),...(current?.cover?[`songs/${song.id}.webp`]:[])],'Delete song: '+song.title);
 });}
 export async function renameSong(song:Song,title:string){await writeSong(song.id,async()=>{
  const current=await loadSong(song.id);if(!current)return;
@@ -157,8 +171,8 @@ export async function listScores(){
  return (await Promise.all(files.map(f=>readJson<SavedScore>(f.path).catch(()=>null)))).filter((s):s is SavedScore=>!!s);
 }
 export async function loadScore(id:string){return readJson<SavedScore>(`scores/${id}.json`);}
-export async function scoreAudio(id:string){return read(`scores/${id}.mp3`);}
-export async function deleteScore(score:SavedScore){await remove([`scores/${score.id}.json`,`scores/${score.id}.mp3`],'Delete score: '+score.title);}
+export async function scoreAudio(score:{id:string;audio?:string}){return read(audioPath('scores',score));}
+export async function deleteScore(score:SavedScore){await remove([`scores/${score.id}.json`,audioPath('scores',score)],'Delete score: '+score.title);}
 
 /** Ask for permission to save, in a popup so nothing on the page is lost. */
 export function allowSaving(next='/'){

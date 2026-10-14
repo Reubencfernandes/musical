@@ -208,7 +208,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
      history.reset(entry.project);savedAt.current=entry.project;created.current=entry.createdAt;
      setProjectName(entry.name);setProjectId(entry.id);setSaving('saved');
     }else if(open.song){
-     const [song,blob]=await Promise.all([loadSong(open.song),songAudio(open.song)]);if(!blob)throw new Error('That song was not found in your library.');
+     const song=await loadSong(open.song),blob=song&&await songAudio(song);if(!song||!blob)throw new Error('That song was not found in your library.');
      const buffer=await player.decode(await blob.arrayBuffer());if(!active)return;
      addAudio(song?.title||'Song',buffer,0);if(song?.title)setProjectName(song.title.slice(0,50));
     }

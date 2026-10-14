@@ -47,7 +47,7 @@ export function useSongs(storage:boolean){
 
  const audioUrl=useCallback(async(item:Item)=>{
   const known=urls.current.get(item.id);if(known)return known;
-  const blob=item.local??await songAudio(item.id);if(!blob)throw new Error('This song’s audio is missing.');
+  const blob=item.local??await songAudio(item);if(!blob)throw new Error('This song’s audio is missing.');
   const url=URL.createObjectURL(blob);urls.current.set(item.id,url);return url;
  },[]);
 
