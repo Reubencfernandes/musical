@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<style>
+  html, body { margin: 0; background: __PAGE__; -webkit-text-size-adjust: 100%; }
+  body { padding: 10px 8px 48px; font-family: -apple-system, Roboto, sans-serif; }
+  #paper { background: #fff; color: #202020; border-radius: 12px; padding: 8px 4px 16px; box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+  #paper svg { width: 100%; height: auto; overflow: visible; }
+  .current-bar { fill: #e34b1c !important; stroke: #e34b1c !important; }
+  .abcjs-note, .abcjs-rest { cursor: pointer; }
+  #problem { color: #c2410c; font-size: 14px; padding: 12px 6px; }
+</style>
+</head>
+<body>
+<div id="paper" aria-label="Sheet music"></div>
+<div id="problem"></div>
+<script>__ABCJS__</script>
+<script>__ENGRAVE__</script>
+<script>
+  // Draws the score with abcjs, laid out by the web app's engrave() when the
+  // ABC is SheetSage2's native dialect, and highlights a bar on request.
+  var current = -1;
+  function send(message) { try { Kiku.postMessage(JSON.stringify(message)); } catch (e) {} }
+  function kikuRender(abc) {
+    var text = abc;
+    try { text = window.kikuEngrave(abc); } catch (e) { text = abc; }
+    try {
+      ABCJS.renderAbc('paper', text, {
+        responsive: 'resize',
+        add_classes: true,
+        paddingleft: 4, paddingright: 4,
+        // Phones get fewer, larger bars per line.
+        staffwidth: Math.max(280, window.innerWidth - 40),
+        wrap: {minSpacing: 1.6, maxSpacing: 2.6, preferredMeasuresPerLine: window.innerWidth < 600 ? 2 : 4},
+        clickListener: function (element, tune, classes) {
+          var match = /abcjs-mm(\d+)/.exec(classes || '');
+          if (match) send({bar: Number(match[1])});
+        }
+      });
+      document.getElementById('problem').textContent = '';
+      send({ready: true});
+    } catch (e) {
+      document.getElementById('problem').textContent = 'This score could not be drawn: ' + e.message;
+      send({error: String(e.message || e)});
+    }
+  }
+  function kikuBar(index, follow) {
+    if (index === current) return;
+    var marked = document.querySelectorAll('.current-bar');
+    for (var i = 0; i < marked.length; i++) marked[i].classList.remove('current-bar');
+    current = index;
+    if (index < 0) return;
+    var notes = document.querySelectorAll('.abcjs-mm' + index);
+    for (var j = 0; j < notes.length; j++) notes[j].classList.add('current-bar');
+    if (follow && notes.length) {
+      var box = notes[0].getBoundingClientRect();
+      if (box.top < 60 || box.bottom > window.innerHeight - 60) window.scrollBy({top: box.top - 140, behavior: 'smooth'});
+    }
+  }
+  kikuRender(__ABC__);
+</script>
+</body>
+</html>

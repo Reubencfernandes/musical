@@ -1,0 +1,108 @@
+name: Kiku AI app
+
+on:
+  push:
+    paths:
+      - 'kiku_app/**'
+      - '.github/workflows/kiku-app.yml'
+  pull_request:
+    paths:
+      - 'kiku_app/**'
+      - '.github/workflows/kiku-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kiku-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.7'
+
+jobs:
+  check:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kiku_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - name: Make a reference FLAC with libFLAC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flac
+          python3 - <<'EOF'
+          import math, random, struct, wave
+          random.seed(7)
+          with wave.open('build-reference.wav', 'wb') as w:
+              w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
+              frames = bytearray()
+              for i in range(44100 * 4):
+                  t = i / 44100
+                  l = 0.4 * math.sin(2 * math.pi * 196 * t) + 0.2 * math.sin(2 * math.pi * 293.7 * t) + random.uniform(-.03, .03)
+                  r = 0.35 * math.sin(2 * math.pi * 246.9 * t) + random.uniform(-.03, .03)
+                  frames += struct.pack('<hh', int(l * 32767), int(r * 32767))
+              w.writeframes(bytes(frames))
+          EOF
+          flac --silent --best -f build-reference.wav -o build-reference.flac
+      - name: Test
+        env:
+          KIKU_REFERENCE_FLAC: build-reference.flac
+          KIKU_REFERENCE_WAV: build-reference.wav
+        run: flutter test
+      - name: Check the app's FLAC with the reference decoder
+        run: flac --test build/kiku-test.flac
+
+  android:
+    name: Android APK
+    needs: check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kiku_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: mv build/app/outputs/flutter-apk/app-release.apk build/kiku-ai.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiku-ai-android
+          path: kiku_app/build/kiku-ai.apk
+
+  apple:
+    name: iOS and macOS builds
+    needs: check
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: kiku_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - run: flutter build macos --release
