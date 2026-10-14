@@ -45,10 +45,9 @@ class _ScoreScreenState extends State<ScoreScreen> {
 
   Future<void> _pick() async {
     final score = _score;
-    final picked = await FilePicker.platform.pickFiles(type: FileType.audio);
-    final file = picked?.files.single;
-    if (file?.path == null) return;
-    if (file!.size > 100 * 1024 * 1024) {
+    final file = await FilePicker.pickFile(type: FileType.audio);
+    if (file == null || file.path == null) return;
+    if (file.size > 100 * 1024 * 1024) {
       if (mounted) showNote(context, 'Choose an audio file under 100 MB.');
       return;
     }

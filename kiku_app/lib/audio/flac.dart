@@ -86,7 +86,6 @@ class _Reader {
   }
 }
 
-const _rates = [0, 88200, 176400, 192000, 8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000];
 const _sizes = [0, 8, 12, 0, 16, 20, 24, 32];
 
 /// Decodes a FLAC file into 16-bit audio. More than two channels are folded into stereo.

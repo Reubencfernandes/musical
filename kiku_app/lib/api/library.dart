@@ -39,7 +39,7 @@ class Song {
   final Map<String, dynamic>? meta, cover;
   final String? idea;
 
-  /// The audio's path in the library when it is not songs/<id>.mp3.
+  /// The audio's path in the library when it is not `songs/<id>.mp3`.
   final String? audio;
 
   String get audioPath => audio != null && audio!.startsWith('songs/$id.') ? audio! : 'songs/$id.mp3';

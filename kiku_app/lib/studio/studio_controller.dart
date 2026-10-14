@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -34,12 +33,11 @@ class StudioJob {
   String? error;
 }
 
-/// One track of a result. `muted` items (an original backing kept for reference) stay silent.
+/// One track of a result.
 class _Placed {
-  const _Placed(this.name, this.pcm, {this.muted = false});
+  const _Placed(this.name, this.pcm);
   final String name;
   final Pcm pcm;
-  final bool muted;
 }
 
 const _maxSeconds = 240.0, _scoreMax = 300.0;
@@ -369,7 +367,8 @@ class StudioController extends ChangeNotifier {
   }
 
   Future<void> seek(double seconds) async {
-    final to = seconds.clamp(0.0, math.max(0.0, project.end));
+    final double end = math.max(0.0, project.end);
+    final to = seconds.clamp(0.0, end);
     if (_player.playing) {
       await play(from: to);
     } else {
@@ -485,11 +484,11 @@ class StudioController extends ChangeNotifier {
     final generation = <String, dynamic>{
       'model': model,
       'style': style,
-      if (lyrics != null) 'lyrics': lyrics,
-      if (report?['seed'] != null) 'seed': report!['seed'],
+      'lyrics': ?lyrics,
+      'seed': ?report?['seed'],
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'sourceClips': target?.clips.map((c) => c.id).toList() ?? const <String>[],
-      if (status != null) 'status': status,
+      'status': ?status,
     };
     final made = [for (final item in items) (item, _store(item.pcm))];
     final source = replace && target != null ? TakeSource(tracks: target.tracks, start: target.start, end: target.end) : null;
@@ -518,7 +517,6 @@ class StudioController extends ChangeNotifier {
               offset: 0,
               duration: item.pcm.duration,
               name: item.name,
-              muted: item.muted,
               generation: generation,
               score: abc != null && abc.isNotEmpty ? {'abc': abc, 'lyrics': lyrics ?? ''} : null,
             ),

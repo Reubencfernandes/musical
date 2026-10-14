@@ -48,10 +48,10 @@ class _StudioScreenState extends State<StudioScreen> {
 
   Future<void> _import() async {
     final studio = _studio;
-    final picked = await FilePicker.platform.pickFiles(type: FileType.audio);
-    final path = picked?.files.single.path;
-    if (path == null) return;
-    await studio.openFile(path, name: p.basenameWithoutExtension(picked!.files.single.name));
+    final file = await FilePicker.pickFile(type: FileType.audio);
+    final path = file?.path;
+    if (file == null || path == null) return;
+    await studio.openFile(path, name: p.basenameWithoutExtension(file.name));
   }
 
   Future<void> _record() async {
