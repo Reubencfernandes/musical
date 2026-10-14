@@ -5,6 +5,7 @@ import {Play,Pause,Square,SkipBack,Repeat,Circle,MousePointer2,TextCursor,Undo2,
  Download,Library,Sparkles,X,Volume2,Headphones,Maximize2,Keyboard,Cloud,CloudOff,CloudUpload,Check} from 'lucide-react';
 import Arrangement,{type Tool} from './Arrangement';
 import Mixer from './Mixer';
+import Logo from '@/components/Logo';
 import AIPanel,{type Create} from './AIPanel';
 import Browser,{INSTRUMENTS} from './Browser';
 import {useJobs,targetOf,type Target} from './useJobs';
@@ -353,7 +354,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
    onChange={e=>{void importFiles([...(e.target.files||[])]);e.target.value='';}}/>
   <header className="studio-bar">
    <div className="studio-brand">
-    <a href="/" className="studio-logo" aria-label="Kiku AI home">KIKU<span className="logo-dot"/></a>
+    <Logo className="studio-logo" size={26}/>
     <details className="project-menu">
      <summary className="header-pill"><span>{projectName}</span><ChevronDown size={12}/></summary>
      <div className="studio-popover">
