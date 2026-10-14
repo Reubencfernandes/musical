@@ -50,7 +50,7 @@ void main() {
       final floats = ByteData(8)
         ..setFloat32(0, 0.5, Endian.little)
         ..setFloat32(4, -1.0, Endian.little);
-      expect(decodeWav(Uint8List.fromList([...f, ...floats.buffer.asUint8List()])).samples, [16384, -32767]);
+      expect(decodeWav(Uint8List.fromList([...f, ...floats.buffer.asUint8List()])).samples, [16384, -32768]);
     });
 
     test('rejects other files', () {

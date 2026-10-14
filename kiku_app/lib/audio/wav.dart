@@ -48,50 +48,49 @@ Pcm decodeWav(Uint8List bytes) {
   }
   final frames = length ~/ (stride * channels);
   final out = channels == 1 ? Int16List(frames) : Int16List(frames * 2);
-  double read(int offset) {
+  // Integer formats keep their top 16 bits exactly, so 16-bit audio is read losslessly.
+  int read(int offset) {
     switch (format == 3 ? bits + 100 : bits) {
       case 8:
-        return (data.getUint8(offset) - 128) / 128;
+        return (data.getUint8(offset) - 128) << 8;
       case 16:
-        return data.getInt16(offset, Endian.little) / 32768;
+        return data.getInt16(offset, Endian.little);
       case 24:
-        final value = data.getUint8(offset) | data.getUint8(offset + 1) << 8 | data.getInt8(offset + 2) << 16;
-        return value / 8388608;
+        return data.getInt8(offset + 2) << 8 | data.getUint8(offset + 1);
       case 32:
-        return data.getInt32(offset, Endian.little) / 2147483648;
+        return data.getInt32(offset, Endian.little) >> 16;
       case 132:
-        return data.getFloat32(offset, Endian.little);
+        return _fromFloat(data.getFloat32(offset, Endian.little));
       default:
-        return data.getFloat64(offset, Endian.little);
+        return _fromFloat(data.getFloat64(offset, Endian.little));
     }
   }
 
   for (int i = 0; i < frames; i++) {
     final base = start + i * stride * channels;
     if (channels == 1) {
-      out[i] = _sample(read(base));
+      out[i] = read(base);
     } else if (channels == 2) {
-      out[i * 2] = _sample(read(base));
-      out[i * 2 + 1] = _sample(read(base + stride));
+      out[i * 2] = read(base);
+      out[i * 2 + 1] = read(base + stride);
     } else {
       // Fold extra channels into left and right alternately.
-      double left = 0, right = 0;
+      int left = 0, right = 0;
       for (int c = 0; c < channels; c++) {
-        final value = read(base + c * stride);
         if (c.isEven) {
-          left += value;
+          left += read(base + c * stride);
         } else {
-          right += value;
+          right += read(base + c * stride);
         }
       }
-      out[i * 2] = _sample(left / ((channels + 1) ~/ 2));
-      out[i * 2 + 1] = _sample(right / (channels ~/ 2));
+      out[i * 2] = left ~/ ((channels + 1) ~/ 2);
+      out[i * 2 + 1] = right ~/ (channels ~/ 2);
     }
   }
   return Pcm(out, channels == 1 ? 1 : 2, rate);
 }
 
-int _sample(double value) => value.isFinite ? toSample(value) : 0;
+int _fromFloat(double value) => value.isFinite ? (value * 32768).round().clamp(-32768, 32767) : 0;
 
 /// Writes 16-bit PCM WAV.
 Uint8List encodeWav(Pcm pcm) {
