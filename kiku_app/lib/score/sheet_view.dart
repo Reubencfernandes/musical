@@ -43,10 +43,13 @@ class _SheetViewState extends State<SheetView> {
         .replaceFirst('__ABCJS__', abcjs.replaceAll('</script', '<\\/script'))
         .replaceFirst('__ENGRAVE__', engrave.replaceAll('</script', '<\\/script'))
         .replaceFirst('__ABC__', jsonEncode(widget.abc).replaceAll('</', '<\\/'));
-    final controller = _controller ??= WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Color(int.parse('ff${page.substring(1)}', radix: 16)))
-      ..addJavaScriptChannel('Kiku', onMessageReceived: (message) {
+    final fresh = _controller == null;
+    final controller = _controller ??= WebViewController();
+    if (fresh) {
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      // macOS web views draw their own background; elsewhere it matches the page.
+      if (!Platform.isMacOS) await controller.setBackgroundColor(Color(int.parse('ff${page.substring(1)}', radix: 16)));
+      await controller.addJavaScriptChannel('Kiku', onMessageReceived: (message) {
         final data = jsonDecode(message.message);
         if (data is! Map) return;
         if (data['ready'] == true && mounted) {
@@ -55,6 +58,7 @@ class _SheetViewState extends State<SheetView> {
         }
         if (data['bar'] is num) widget.onBar?.call((data['bar'] as num).toInt());
       });
+    }
     await controller.loadHtmlString(html);
     if (mounted) setState(() {});
   }
