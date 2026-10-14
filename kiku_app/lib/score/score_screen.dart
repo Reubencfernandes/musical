@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
@@ -46,12 +47,13 @@ class _ScoreScreenState extends State<ScoreScreen> {
   Future<void> _pick() async {
     final score = _score;
     final file = await FilePicker.pickFile(type: FileType.audio);
-    if (file == null || file.path == null) return;
-    if (file.size > 100 * 1024 * 1024) {
+    final path = file?.path;
+    if (file == null || path == null) return;
+    if (await File(path).length() > 100 * 1024 * 1024) {
       if (mounted) showNote(context, 'Choose an audio file under 100 MB.');
       return;
     }
-    score.choose(file.path!, file.name);
+    score.choose(path, file.name);
   }
 
   Future<void> _record() async {
