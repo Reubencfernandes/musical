@@ -1,0 +1,58 @@
+name: YouTube to Score extension
+
+# Packages the Chrome extension as a ZIP. Every run keeps it as a workflow
+# artifact; runs on main also attach it to the "extension-latest" release, so
+# the README can link one download that is always current.
+on:
+  push:
+    paths:
+      - 'outputs/youtube-to-score-extension/**'
+      - '.github/workflows/extension.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the manifest
+        working-directory: outputs/youtube-to-score-extension
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          m = json.load(open('manifest.json'))
+          assert m['manifest_version'] == 3
+          files = [m['background']['service_worker'], m['side_panel']['default_path'], *m['icons'].values()]
+          files += [f for s in m['content_scripts'] for f in s['js']]
+          missing = [f for f in files if not os.path.exists(f)]
+          assert not missing, missing
+          print('YouTube to Score', m['version'])
+          EOF
+      - name: Package
+        working-directory: outputs/youtube-to-score-extension
+        # The optional yt-dlp helper in native/ stays out of the download, as its
+        # README asks; it remains in the repository for people who set it up.
+        run: zip -r -X -q "$GITHUB_WORKSPACE/kiku-youtube-to-score.zip" . -x 'native/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiku-youtube-to-score
+          path: kiku-youtube-to-score.zip
+      - name: Publish to the extension-latest release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: extension-latest
+          name: YouTube to Score (Chrome extension)
+          make_latest: false
+          files: kiku-youtube-to-score.zip
+          body: |
+            The latest build of the Kiku AI **YouTube to Score** Chrome extension.
+
+            1. Download `kiku-youtube-to-score.zip` below and unzip it.
+            2. Open `chrome://extensions`, switch on **Developer mode**, click **Load unpacked** and pick the unzipped folder.
+            3. Pin **YouTube to Score**, open a YouTube video and click it.
+
+            Full instructions: https://github.com/Reubencfernandes/musical#chrome-extension-youtube-to-score

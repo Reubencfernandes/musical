@@ -131,7 +131,19 @@ come from each user's own connection: calls made from this Space's shared addres
 rate-limited by Hugging Face. Serve the app over HTTPS and keep the session secret stable
 across restarts. Login opens the app at its own origin so it does not depend on
 third-party cookies. Backend score downloads expire after 24 hours.
-Backend score downloads expire after 24 hours.
+
+### The Flutter app
+
+The Kiku AI Flutter app (`kiku_app` in this repository) signs in with Hugging Face on the
+device, using this app's OAuth client and the `kikuai://oauth/callback` redirect listed in
+`/oauth/client`, or with a pasted access token. It calls the authenticated routes
+(`/api/modal/jobs`, `/api/modal/file`, `/api/modal/cover`) with the user's token as
+`Authorization: Bearer hf_…`. The server checks the token with Hugging Face's `whoami-v2`, keeps
+the answer for five minutes, and skips the same-origin check for these requests, which carry no
+cookie. A request with an `Authorization` header never falls back to the session cookie.
+
+Songs and scores saved by the app keep FLAC audio and name it in the entry's `audio` field
+(`songs/<id>.flac`); the library reads that field and otherwise uses `<id>.mp3`.
 
 ## Limits
 

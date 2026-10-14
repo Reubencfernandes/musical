@@ -5,8 +5,12 @@ SheetSage2 through the [Score-Studio-API](https://huggingface.co/spaces/Reubencf
 
 ## Install
 
+Get the files from the [`extension-latest` release](https://github.com/Reubencfernandes/musical/releases/tag/extension-latest)
+(`kiku-youtube-to-score.zip`, rebuilt by GitHub Actions whenever this folder changes on `main`)
+and unzip it, or use this folder from a clone of the repository. Then:
+
 1. Open `chrome://extensions` and switch on **Developer mode**.
-2. Click **Load unpacked** and pick this folder.
+2. Click **Load unpacked** and pick the folder that holds `manifest.json`.
 3. Pin **YouTube to Score** to the toolbar.
 4. Optional but recommended: open the popup → **SheetSage settings** and paste a Hugging Face
    token (read access). Without one, the Space's anonymous ZeroGPU quota runs out after a few clips.
