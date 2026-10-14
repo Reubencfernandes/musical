@@ -1,8 +1,9 @@
 import {getClip, putClip, deleteClip, listClips} from './db.js';
 import {transcribe, DEFAULT_SPACE} from './sheetsage.js';
 import {clock} from './time.js';
-import {readScore, arrange, toMusicXML, pickupUnits} from './score.js';
-import {engrave, barAt, Highlighter, measureTimes} from './sheet.js';
+import {readScore, readEvents, arrange, toMusicXML, pickupUnits} from './score.js';
+import {engrave, barAt, Highlighter, measureTimes, AI_NOTE} from './sheet.js';
+import {scorePdf} from './pdf.js';
 import {SheetPlayer, performance as perform} from './playback.js';
 import {animatePerformer} from './dots.js';
 import {songInfo} from './title.js';
@@ -58,6 +59,36 @@ function fileLink({name, blob}, label = name) {
 
 const icon = (button, name) => button.querySelector('use').setAttribute('href', `#i-${name}`);
 
+/** A capture's delete button: the first click asks, a second within 3 seconds deletes. */
+function deleteButton(c) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'clip-delete';
+  button.title = 'Delete this capture';
+  button.setAttribute('aria-label', `Delete ${c.title || 'this capture'}`);
+  button.innerHTML = '<svg width="15" height="15" aria-hidden="true"><use href="#i-trash"/></svg>';
+  let timer = 0;
+  button.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!button.classList.contains('armed')) {
+      button.classList.add('armed');
+      button.textContent = 'Delete?';
+      timer = setTimeout(() => {
+        button.classList.remove('armed');
+        button.innerHTML = '<svg width="15" height="15" aria-hidden="true"><use href="#i-trash"/></svg>';
+      }, 3000);
+      return;
+    }
+    clearTimeout(timer);
+    if (c.id === clip?.id) job?.abort();
+    await deleteClip(c.id);
+    if (c.id === clip?.id) location.replace(here());
+    else renderList();
+  });
+  return button;
+}
+
 async function renderList() {
   const list = $('clips');
   list.replaceChildren();
@@ -76,7 +107,8 @@ async function renderList() {
     meta.append(Object.assign(document.createElement('span'), {className: 'when', textContent: new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}));
     a.title = c.title || 'Untitled';
     a.append(name, meta);
-    li.append(a);
+    li.className = 'clip-item';
+    li.append(a, deleteButton(c));
     list.append(li);
   }
   $('clip-count').textContent = String(list.children.length || '');
@@ -167,20 +199,30 @@ async function setupSheet(result) {
   $('pages').replaceChildren();
   $('sheet-error').classList.add('hidden');
   for (const el of document.querySelectorAll('.transport, .score-toolbar, #sheet-settings')) el.classList.remove('hidden');
+  const files = result.files.filter(Boolean);
+  const text = async (name) => (await files.find((f) => f.name === name)?.blob.text()) || '';
+  // SheetSage2's ABC first; when its notation step failed, what the model heard (events.tsv).
+  let pickup = null;
   try {
     native = readScore(result.abc);
   } catch {
-    native = null;
+    try {
+      native = readEvents(await text('events.tsv'));
+      pickup = native.pickup;
+    } catch {
+      native = null;
+    }
+  }
+  if (token !== drawToken) return;
+  if (!native) {
     showOriginalPages(result, 'This score could not be re-engraved.');
     return;
   }
-  const files = result.files.filter(Boolean);
-  const text = async (name) => (await files.find((f) => f.name === name)?.blob.text()) || '';
   let report = {};
   try { report = JSON.parse(await text('result.json') || '{}'); } catch {}
   const downbeats = (await text('downbeat.lab')).split(/\s+/).map(Number).filter((n) => Number.isFinite(n) && n >= 0);
   if (token !== drawToken) return;
-  timing = {pickup: pickupUnits(report.diagnostics, native.grid), downbeats, duration: report.duration_seconds || clip.seconds};
+  timing = {pickup: pickup ?? pickupUnits(report.diagnostics, native.grid), downbeats, duration: report.duration_seconds || clip.seconds};
   const guess = songInfo(clip.title, clip.channel);
   sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, ...clip.sheet};
   $('speed').value = String(sheet.speed);
@@ -447,7 +489,11 @@ $('sidebar-close').textContent = inPanel ? '✕' : '«';
 addEventListener('click', (e) => {
   if ($('sidebar').classList.contains('open') && !$('sidebar').contains(e.target) && !e.target.closest('#sidebar-toggle, #panel-captures')) setDrawer(false);
 });
-$('close-panel').addEventListener('click', () => window.close());
+// Chrome's side panel ignores window.close(); it has its own close call.
+$('close-panel').addEventListener('click', async () => {
+  const win = await chrome.windows.getCurrent();
+  chrome.sidePanel.close({windowId: win.id}).catch(() => window.close());
+});
 
 // ---- playing along with the video ----------------------------------------------
 
@@ -656,7 +702,30 @@ const print = () => {
 };
 $('open-tab').addEventListener('click', () => clip && chrome.tabs.create({url: `clip.html?id=${clip.id}`}));
 $('sheet-print').addEventListener('click', print);
-$('download-pdf').addEventListener('click', print);
+// Download PDF: the pages at print resolution, straight to a file (no print dialog).
+$('download-pdf').addEventListener('click', async () => {
+  if (!drawn) return;
+  const button = $('download-pdf');
+  const label = button.textContent;
+  button.textContent = 'Making the PDF…';
+  button.disabled = true;
+  try {
+    const {title, composer} = drawn.header;
+    const blob = await scorePdf(drawn.svgs, {
+      title, author: [composer, CREDIT].filter(Boolean).join(' · '),
+      subject: AI_NOTE, keywords: 'sheet music, AI-generated, SheetSage2, m-a-p/SheetSage2',
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safeName([title, composer].filter(Boolean).join(' - '))} (AI transcription, SheetSage2).pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    document.querySelector('.download-menu').open = false;
+  } finally {
+    button.textContent = label;
+    button.disabled = false;
+  }
+});
 addEventListener('click', (e) => {
   const menu = document.querySelector('.download-menu');
   if (menu.open && !menu.contains(e.target)) menu.open = false;

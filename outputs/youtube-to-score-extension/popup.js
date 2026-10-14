@@ -352,6 +352,11 @@ $('cancel').addEventListener('click', () => {
 $('fetch').addEventListener('click', fetchNow);
 $('dismiss').addEventListener('click', () => chrome.runtime.sendMessage({target: 'background', type: 'dismiss'}));
 $('open-captures').addEventListener('click', () => { location.href = 'clip.html?panel=1'; });
+// Chrome's side panel ignores window.close(); it has its own close call.
+$('close-panel').addEventListener('click', async () => {
+  const win = await chrome.windows.getCurrent();
+  chrome.sidePanel.close({windowId: win.id}).catch(() => window.close());
+});
 
 // The panel stays open across tabs and videos: start over when the video in view changes.
 const restart = () => { if (shown !== 'recording') location.reload(); };

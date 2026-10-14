@@ -141,6 +141,165 @@ export function readScore(text) {
   return {grid, tempo: Number(tempo[1]), bars, vocal, ins};
 }
 
+// ---- reading SheetSage2's raw events --------------------------------------
+// When SheetSage2's notation step fails (a note cut off at the end of a clip is
+// enough), it returns no ABC, but events.tsv still holds what the model heard:
+// one row per sixteenth-note step with the meter, bar positions, key, chords
+// and melody notes. This reads it into the same shape as readScore.
+
+const HARTE = {
+  maj: '', min: 'm', 7: '7', maj7: 'maj7', min7: 'm7', dim: 'dim', aug: 'aug', sus4: 'sus4', sus2: 'sus2',
+  hdim7: 'm7b5', dim7: 'dim7', maj6: '6', 6: '6', min6: 'm6', '7sus4': '7sus4', minmaj7: 'm(maj7)', 'min(maj7)': 'm(maj7)',
+};
+const DEGREES = {1: 0, b2: 1, 2: 2, b3: 3, 3: 4, 4: 5, '#4': 6, b5: 6, 5: 7, '#5': 8, b6: 8, 6: 9, bb7: 9, b7: 10, 7: 11};
+const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/** "A:min", "G:7" or "A#:maj7/3" → a chord name in SheetSage2's ABC style ("Am", "G7", "A#maj7/C##"-free). */
+function chordFromHarte(label) {
+  const match = /^([A-G](?:#|b)?):([^/]+)(?:\/(.+))?$/.exec(label.trim());
+  if (!match) return null;
+  const [, root, quality, bassDegree] = match;
+  const kind = HARTE[quality] ?? (quality.startsWith('min') ? 'm' : '');
+  let bass = '';
+  if (bassDegree && DEGREES[bassDegree] != null) {
+    const rootPc = pcOf({letter: root[0], alter: root[1] === '#' ? 1 : root[1] === 'b' ? -1 : 0});
+    bass = `/${SHARPS[(rootPc + DEGREES[bassDegree]) % 12]}`;
+  }
+  return root + kind + bass;
+}
+
+/** "A:minor" → "Am", using an enharmonic twin when the spelled key does not exist. */
+function keyFromHarte(label) {
+  const match = /^([A-G](?:#|b)?):(major|minor)$/.exec(label.trim());
+  if (!match) return null;
+  const minor = match[2] === 'minor';
+  const name = match[1] + (minor ? 'm' : '');
+  return (minor ? MINOR : MAJOR).includes(name) ? name : simplestKey(pcOf(parseKey(name)), minor);
+}
+
+/**
+ * Reads events.tsv into bars, two voices of notes, chords and keys, like
+ * readScore. Its first bar is padded as SheetSage2 pads ABC, and `pickup`
+ * says how much of it is a real pickup.
+ */
+export function readEvents(text) {
+  const rows = String(text).split(/\r?\n/).slice(1).map((line) => line.split('\t')).filter((r) => r.length >= 3);
+  if (!rows.length) fail('no events');
+  const grid = 16; // one step is a sixteenth note
+  let meter = [4, 4];
+  const downbeats = [];
+  const meters = new Map();
+  const notes = {0: [], 1: []};
+  const chords = [];
+  const keys = [];
+  const sections = [];
+  const beatTimes = [];
+  for (const [time, step, fields] of rows) {
+    const at = Number(step);
+    for (const field of fields.split(';').map((f) => f.trim()).filter(Boolean)) {
+      const eq = field.indexOf('=');
+      const name = field.slice(0, eq);
+      const value = field.slice(eq + 1);
+      if (name === 'rhythm') {
+        const m = /meter:\((\d+),\s*(\d+)\)/.exec(value);
+        if (m) meter = [Number(m[1]), Number(m[2])];
+        const pos = /eighth_position:(\d+)/.exec(value);
+        if (pos && Number(pos[1]) === 0) { downbeats.push(at); meters.set(at, meter); }
+        if (pos && Number(pos[1]) % 2 === 0) beatTimes.push([at, Number(time)]);
+      } else if (name === 'key') {
+        const key = keyFromHarte(value);
+        if (key) keys.push([at, key]);
+      } else if (name === 'chord') {
+        const symbol = value === 'N' ? null : chordFromHarte(value);
+        if (symbol) chords.push([at, symbol]);
+      } else if (name === 'structure') {
+        sections.push([at, value]);
+      } else if (name === 'melody') {
+        for (const m of value.matchAll(/pitch=(\d+):track=(\d+)(?::dur_bin=\d+)?:dur_steps=(\d+)/g)) {
+          const track = Number(m[2]) === 0 ? 0 : 1;
+          notes[track].push({start: at, units: Math.max(1, Number(m[3])), pitch: Number(m[1])});
+        }
+      }
+    }
+  }
+  if (!downbeats.length) downbeats.push(0);
+  const barOf = (m) => m[0] * grid / m[1];
+  // A first bar shorter than its meter is a pickup, as SheetSage2's ABC writes it.
+  if (downbeats.length > 1 && downbeats[0] === 0 && downbeats[1] < barOf(meters.get(downbeats[1]) || meters.get(0) || meter)) {
+    meters.set(downbeats[1], meters.get(downbeats[1]) || meters.get(0) || meter);
+    downbeats.shift();
+  }
+  const firstMeter = meters.get(downbeats[0]) || meter;
+  const first = downbeats[0];
+  // Pad before the first bar line as SheetSage2 does, so a pickup ends a full first bar.
+  const shift = first > 0 ? barOf(firstMeter) - (first % barOf(firstMeter) || barOf(firstMeter)) : 0;
+  const pickup = first > 0 ? first % barOf(firstMeter) || barOf(firstMeter) : 0;
+  const lastNote = Math.max(0, ...[...notes[0], ...notes[1]].map((n) => n.start + n.units));
+  const end = Math.max(lastNote, ...chords.map(([t]) => t + 1), downbeats[downbeats.length - 1] + 1) + shift;
+
+  // Bars run from bar line to bar line; one that is not a whole bar of its meter takes a meter of its own length.
+  const starts = (first > 0 ? [0] : []).concat(downbeats.map((d) => d + shift));
+  const bars = [];
+  starts.forEach((start, i) => {
+    let m = meters.get(start - shift) || meter;
+    let length = i + 1 < starts.length ? starts[i + 1] - start : barOf(m);
+    if (length !== barOf(m)) m = length % 4 === 0 ? [length / 4, 4] : [length / 2, 8];
+    if (length > 0) bars.push({start, length, meter: m, key: null, sections: []});
+  });
+  while (bars[bars.length - 1].start + bars[bars.length - 1].length < end) {
+    const last = bars[bars.length - 1];
+    bars.push({start: last.start + last.length, length: last.length, meter: last.meter, key: null, sections: []});
+  }
+  const total = bars[bars.length - 1].start + bars[bars.length - 1].length;
+
+  const keyList = (keys.length ? keys : [[0, 'C']]).map(([t, k]) => [Math.max(0, t + shift), k]);
+  keyList[0][0] = 0;
+  const keyAt = (t) => keyList.filter(([s]) => s <= t).pop()[1];
+  for (const bar of bars) {
+    bar.key = keyAt(bar.start);
+    bar.sections = sections.filter(([t]) => t + shift >= bar.start && t + shift < bar.start + bar.length).map(([, s]) => s);
+  }
+
+  // Melody notes, spelled for the key they sound in; a note stops where the next one starts.
+  const voice = (list) => {
+    const sorted = list.map((n) => ({...n, start: n.start + shift})).sort((a, b) => a.start - b.start || b.pitch - a.pitch)
+      .filter((n, i, all) => i === 0 || n.start !== all[i - 1].start);
+    return sorted.map((n, i) => {
+      const next = sorted[i + 1]?.start ?? total;
+      const units = Math.max(1, Math.min(n.units, next - n.start, total - n.start));
+      const key = keyAt(n.start);
+      let spelled = spell(((n.pitch % 12) + 12) % 12, key);
+      // A note outside the key leans toward its neighbour, as a copyist spells it:
+      // D♯ when it rises to E, E♭ when it falls to D.
+      if (!scaleOf(key).includes(`${spelled.letter}${spelled.alter}`)) {
+        const near = [sorted[i - 1], sorted[i + 1]].filter(Boolean).map((m) => m.pitch - n.pitch);
+        const pc = ((n.pitch % 12) + 12) % 12;
+        const options = LETTERS.split('').flatMap((letter) => [-1, 1].map((alter) => ({letter, alter})))
+          .filter((c) => pcOf(c) === pc);
+        if (near.includes(1)) spelled = options.find((c) => c.alter === 1) || spelled;
+        else if (near.includes(-1)) spelled = options.find((c) => c.alter === -1) || spelled;
+      }
+      const octave = (n.pitch - NATURAL[spelled.letter] - spelled.alter) / 12 - 1;
+      return {start: n.start, units, letter: spelled.letter, octave: octave - 4, alt: spelled.alter, pitch: n.pitch};
+    }).filter((n) => n.start < total);
+  };
+  const tempoFrom = () => {
+    const gaps = [];
+    for (let i = 1; i < beatTimes.length; i++) {
+      const steps = beatTimes[i][0] - beatTimes[i - 1][0];
+      const seconds = beatTimes[i][1] - beatTimes[i - 1][1];
+      if (steps > 0 && seconds > 0) gaps.push(seconds / (steps / 4));
+    }
+    gaps.sort((a, b) => a - b);
+    const quarter = gaps[gaps.length >> 1];
+    return quarter ? Math.round(60 / quarter) : 100;
+  };
+  const make = (list, withChords) => ({
+    notes: voice(list), chords: withChords ? chords.map(([t, s]) => [t + shift, s]).filter(([t]) => t < total) : [], keys: keyList,
+  });
+  return {grid, tempo: tempoFrom(), bars, vocal: make(notes[0], true), ins: make(notes[1], false), pickup};
+}
+
 /** The pickup length SheetSage2 padded into bar 1, in grid units, from result.json's diagnostics. */
 export function pickupUnits(diagnostics, grid) {
   for (const line of diagnostics || []) {

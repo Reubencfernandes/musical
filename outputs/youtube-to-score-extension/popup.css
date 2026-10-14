@@ -5,6 +5,7 @@ body > * + * { margin-top: 14px; }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 .brand img { border-radius: 5px; }
 .brand .text-button { margin-left: auto; letter-spacing: 0; text-transform: none; }
+.brand .close-panel { margin-left: 0; font-size: 14px; }
 
 h1 { font-size: 22px; }
 form, section { display: grid; gap: 12px; }

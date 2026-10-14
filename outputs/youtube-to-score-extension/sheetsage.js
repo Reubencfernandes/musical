@@ -97,14 +97,41 @@ async function call({space, token, blob, filename, seconds, melodyOnly, piano, o
   throw new Error('The Space closed the connection before finishing.');
 }
 
-async function download(file, base, auth, signal) {
-  if (!file) return null;
+// A download gives up only after this long with no data, so a slow file that is
+// still arriving finishes, and a stalled one cannot hold "Downloading the score".
+const IDLE_MS = 30000;
+
+function source(file, base) {
   const data = file.image ?? file.video ?? file;
   const url = data.url || `${base}/gradio_api/file=${data.path}`;
-  const res = await fetch(url, {headers: auth, signal});
-  if (!res.ok) throw new Error(`Could not download ${data.orig_name || 'a result file'} (${res.status}).`);
-  const name = data.orig_name || decodeURIComponent(url.split('/').pop().split('?')[0]);
-  return {name, blob: await res.blob()};
+  return {url, name: data.orig_name || decodeURIComponent(url.split('/').pop().split('?')[0])};
+}
+
+async function download({url, name}, auth, signal) {
+  const label = name || 'a result file';
+  const stalled = new AbortController();
+  let timer;
+  const wait = () => { clearTimeout(timer); timer = setTimeout(() => stalled.abort(), IDLE_MS); };
+  const both = signal ? AbortSignal.any([signal, stalled.signal]) : stalled.signal;
+  wait();
+  try {
+    const res = await fetch(url, {headers: auth, signal: both});
+    if (!res.ok) throw new Error(`Could not download ${label} (${res.status}).`);
+    const reader = res.body.getReader();
+    const chunks = [];
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      wait();
+    }
+    return {name, blob: new Blob(chunks, {type: res.headers.get('content-type') || ''})};
+  } catch (err) {
+    if (stalled.signal.aborted && !signal?.aborted) throw new Error(`Downloading ${label} from the Space stalled.`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Transcribes a clip and returns {status, abc, pages, pdf, preview, files} with every file as a blob. */
@@ -113,14 +140,32 @@ export async function transcribe(options) {
   const [status, pages, pdf, preview, files, abc] = outputs;
   const base = spaceUrl(options.space);
   const auth = options.token ? {Authorization: `Bearer ${options.token}`} : {};
-  const get = (file) => download(file, base, auth, options.signal);
+  // The download list repeats the pages and PDF, so each name is fetched once.
+  // The score is drawn from the ABC, so a file that will not download is left
+  // out and named in the status instead of failing the whole transcription.
+  const fetched = new Map();
+  const missed = [];
+  const get = (file) => {
+    if (!file) return null;
+    const src = source(file, base);
+    if (!fetched.has(src.name)) {
+      fetched.set(src.name, download(src, auth, options.signal).catch((err) => {
+        if (options.signal?.aborted) throw err;
+        missed.push(src.name || 'a result file');
+        return null;
+      }));
+    }
+    return fetched.get(src.name);
+  };
   options.onStatus('Downloading the score');
-  return {
-    status: status || '',
+  const result = {
     abc: abc || '',
     pages: await Promise.all((pages || []).map(get)),
     pdf: await get(pdf),
     preview: await get(preview),
     files: await Promise.all((files || []).map(get)),
   };
+  const note = missed.length
+    ? ` Could not download ${missed.join(', ')}; transcribe again to fetch ${missed.length > 1 ? 'them' : 'it'}.` : '';
+  return {status: ((status || '') + note).trim(), ...result};
 }
