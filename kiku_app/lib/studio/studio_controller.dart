@@ -333,7 +333,8 @@ class StudioController extends ChangeNotifier {
     final start = (from ?? position.value).clamp(0.0, project.end);
     final at = start >= project.end - 0.05 ? 0.0 : start;
     final request = ++_render;
-    if (_mixPath == null || from != null) {
+    // The rendered mix starts at _mixFrom, so an earlier start (after Stop, say) needs a new one.
+    if (_mixPath == null || from != null || at < _mixFrom) {
       final snapshot = project, store = _audibleBuffers(project);
       final bytes = await _mixWavOf(snapshot, store, at, snapshot.end);
       if (request != _render) return;
@@ -452,12 +453,22 @@ class StudioController extends ChangeNotifier {
     if (download == null) throw const KikuException('The engine did not return that audio.');
     final bytes = await engine.fetch(download, cancel: cancel);
     cancel.check();
-    return decodeAudio(bytes, name: download.name);
+    final pcm = await decodeAudio(bytes, name: download.name);
+    // A reset or another project opened while decoding cancels the job; its result must not land there.
+    cancel.check();
+    return pcm;
   }
 
+  /// Runs a job, then deletes the selection WAV it uploaded (up to 40 MB each).
   Future<Map<String, dynamic>> _job(String name, Map<String, Object?> input, StudioJob job, CancelToken cancel,
-          {File? audio, Model? model}) =>
-      engine.run(name, input, audio: audio, model: model, cancel: cancel, status: _status(job), progress: _progress(job));
+      {File? audio, Model? model}) async {
+    try {
+      return await engine.run(name, input,
+          audio: audio, model: model, cancel: cancel, status: _status(job), progress: _progress(job));
+    } finally {
+      if (audio != null) unawaited(audio.delete().catchError((_) => audio));
+    }
+  }
 
   /// Puts a result in the project. A result made from a selection becomes a
   /// take under its source and is used straight away, so it is heard in
@@ -617,6 +628,7 @@ class StudioController extends ChangeNotifier {
       if (full.duration <= join) throw const KikuException('The model did not return a continuation.');
       final kept = original.slice(clip.offset, clip.offset + clip.duration);
       final joined = await _spliceOf(kept, join, full.slice(join, full.duration));
+      cancel.check();
       _place(
         label: 'Extend',
         snapshot: snapshot,

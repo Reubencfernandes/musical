@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import 'api/engine.dart';
@@ -28,19 +30,30 @@ class Services {
   late final SongsController songs;
   late final StudioController studio;
   late final ScoreController score;
-  String? _user;
 
-  /// Forgets the last user's songs and work when someone else signs in.
+  /// The last signed-in user, kept through sign-out, and whether they could save.
+  String? _user;
+  bool _storage = false;
+
+  /// Forgets the last user's songs and work when someone else signs in. A
+  /// lapsed or ended session keeps them: the same user signing back in
+  /// carries on, and songs made while saving was off are saved once it is on.
   void _signedInOrOut() {
-    final id = auth.user?.id;
-    if (id == _user) return;
-    final hadUser = _user != null;
-    _user = id;
-    if (hadUser) {
+    final user = auth.user;
+    if (user == null) {
+      unawaited(studio.pause());
+      unawaited(player.pause());
+      return;
+    }
+    if (_user != null && user.id != _user) {
       songs.clear();
       studio.reset();
       score.reset();
     }
+    final allowed = user.storage && !(user.id == _user && _storage);
+    _user = user.id;
+    _storage = user.storage;
+    if (allowed) unawaited(songs.saveUnsaved().catchError((Object _) {}));
   }
 }
 

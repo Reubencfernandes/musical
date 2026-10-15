@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -114,10 +115,16 @@ class ScoreController extends ChangeNotifier {
       final dir = await getTemporaryDirectory();
       final wav = File(p.join(dir.path, 'recording-${DateTime.now().microsecondsSinceEpoch}.wav'));
       await wav.writeAsBytes(await _monoWav(pcm), flush: true);
-      final result = await engine.run('transcribe', {'duration': pcm.duration}, audio: wav, cancel: cancel, status: (text) {
-        message = text;
-        _changed();
-      });
+      final Map<String, dynamic> result;
+      try {
+        result = await engine.run('transcribe', {'duration': pcm.duration}, audio: wav, cancel: cancel, status: (text) {
+          message = text;
+          _changed();
+        });
+      } finally {
+        // The upload copy is up to 50 MB; the original recording is kept below.
+        unawaited(wav.delete().catchError((_) => wav));
+      }
       cancel.check();
       // Keep the recording where the system will not clear it while the score is open.
       final keep = File(p.join((await getApplicationSupportDirectory()).path, 'scores', '${newId()}${p.extension(path)}'));
