@@ -2,7 +2,7 @@
 
 <h1 align="center">Kiku AI</h1>
 
-<p align="center">Write songs from a sentence, build a band around your own voice, and turn any recording into sheet music.</p>
+<p align="center">Write songs from a sentence, reshape your own recordings, and turn any recording into sheet music.</p>
 
 <p align="center">
   <a href="https://huggingface.co/spaces/Reubencf/Kiku-AI"><b>Web app</b></a> ·
@@ -10,17 +10,97 @@
   <a href="#chrome-extension-youtube-to-score"><b>Chrome extension</b></a>
 </p>
 
-Kiku AI was formerly called Score Studio; notation remains one of its modes. This repository is
-named `musical`. Original project folder: `E:\ScoreStudio`.
+Kiku AI is a music studio built around open models: **ACE-Step** and **YuE2** write and edit
+songs, **SheetSage2** writes sheet music from audio, and **Demucs** splits a mix into stems. It
+comes in three forms that share one set of engines and one library in your Hugging Face account:
 
-| What | Where |
-| --- | --- |
-| Web app, the Hugging Face Space [Reubencf/Kiku-AI](https://huggingface.co/spaces/Reubencf/Kiku-AI) | [`outputs/kiku-ai`](outputs/kiku-ai) |
-| Flutter app for Android, iOS and macOS, the same app on your phone | [`kiku_app`](kiku_app) |
-| Chrome extension: YouTube to Score | [`outputs/youtube-to-score-extension`](outputs/youtube-to-score-extension) |
-| Engines: Gradio ZeroGPU Spaces and private Modal GPUs | [`outputs/kiku-engine-space`](outputs/kiku-engine-space), [`outputs/kiku-acestep15-space`](outputs/kiku-acestep15-space), [`outputs/kiku-modal`](outputs/kiku-modal) |
-| On-device inference experiment (YuE2 and SheetSage2 GGUF in Flutter) | [`flutter_app`](flutter_app) |
-| The logo and the script that draws every icon | [`branding`](branding) |
+| | What it is | Where |
+| --- | --- | --- |
+| **Web app** | The full studio, live on the Hugging Face Space [Reubencf/Kiku-AI](https://huggingface.co/spaces/Reubencf/Kiku-AI) | [`outputs/kiku-ai`](outputs/kiku-ai) |
+| **Flutter app** | The same app for Android, iPhone, iPad and Mac | [`kiku_app`](kiku_app) |
+| **Chrome extension** | YouTube to Score: record part of a video and get sheet music | [`outputs/youtube-to-score-extension`](outputs/youtube-to-score-extension) |
+| Engines | Gradio ZeroGPU Spaces and private Modal GPUs | [`outputs/kiku-engine-space`](outputs/kiku-engine-space), [`outputs/kiku-acestep15-space`](outputs/kiku-acestep15-space), [`outputs/kiku-modal`](outputs/kiku-modal) |
+| On-device experiment | YuE2 and SheetSage2 as GGUF, running inside a Flutter app | [`flutter_app`](flutter_app) |
+| Branding | The logo and the script that draws every icon | [`branding`](branding) |
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  subgraph clients [Clients]
+    web["Web app<br>(browser)"]
+    app["Flutter app<br>(kiku_app)"]
+    ext["Chrome extension"]
+  end
+  server["Kiku-AI Space<br>Next.js server"]
+  modal["Private Modal GPUs<br>ACE-Step 1.5 · YuE2 · DreamLite"]
+  engine["Kiku-Engine Space<br>Gradio + ZeroGPU<br>SheetSage2 · Demucs · lyrics · ACE-Step 1"]
+  hub["Hugging Face Hub<br>your kiku-ai-library dataset"]
+  web --> server
+  app -- "your HF token" --> server
+  server --> modal
+  web -- "your HF token" --> engine
+  app -- "your HF token" --> engine
+  ext -- "SheetSage2 only" --> engine
+  web --> hub
+  app --> hub
+```
+
+Everyone signs in with Hugging Face. ACE-Step 1.5 and YuE2 run on Kiku's private Modal GPUs
+through the Kiku-AI server. Transcription, stems, lyrics and ACE-Step 1 run on the Kiku-Engine
+Space against each user's own ZeroGPU allowance. Songs, studio projects and scores are saved to a
+private dataset in each user's own account, so work moves between browser and phone.
+
+## Web app
+
+Open it at [huggingface.co/spaces/Reubencf/Kiku-AI](https://huggingface.co/spaces/Reubencf/Kiku-AI).
+It has a home page, **Generate** (songs from an idea or from your own style and lyrics),
+**Studio** (a multitrack editor where selections can be restyled, rewritten, extended, split
+into stems or covered by YuE2, and instruments added), **Score** (SheetSage2 lead sheets you can
+play, edit and download) and **Library**.
+
+To run it locally you need Node.js 24 and FFmpeg/ffprobe. From `outputs/kiku-ai`, run `npm ci`,
+copy `env.example` to `.env.local`, set a private `SESSION_SECRET` and the API and OAuth
+settings, then run `npm run dev`. Never commit credentials. Details:
+[outputs/kiku-ai/README.md](outputs/kiku-ai/README.md).
+
+## Flutter app
+
+[`kiku_app`](kiku_app) is Kiku AI as a native app for **Android, iPhone, iPad and Mac**, written
+in Flutter. It has the same five sections as the web app:
+
+- **Home**: type an idea and tap **Create**.
+- **Generate**: Simple or Custom mode, ACE-Step 1.5 or YuE2, Enhance, and cover art for every song.
+- **Studio**: a multitrack editor with recording, a mixer, split, undo and WAV export. AI actions
+  (Restyle, Rewrite, Extend, YuE2 Cover, Demucs stems, Lyrics, Add instrument) arrive as takes you
+  can switch on and off.
+- **Score**: SheetSage2 lead sheets, engraved like the web app's, that follow the recording bar
+  by bar. Share them as PDF, MIDI, MusicXML or ABC.
+- **Library**: the same private dataset the web app uses, so songs, projects and scores move
+  between phone and browser.
+
+It signs in with Hugging Face (OAuth with PKCE, or a pasted access token) and calls the deployed
+services directly with the user's own token. It has no server of its own.
+
+**Try it on Android**: open the latest successful
+[Kiku AI app workflow run](https://github.com/Reubencfernandes/musical/actions/workflows/kiku-app.yml)
+and download the `kiku-ai-android` artifact (a test APK signed with a debug key).
+
+**Build it yourself** with Flutter 3.44.7:
+
+```sh
+cd kiku_app
+flutter pub get
+flutter run            # pick an Android phone, an iPhone, a simulator or macOS
+```
+
+> [!NOTE]
+> The app needs two things from the Kiku-AI server: bearer-token sign-in and the
+> `kikuai://oauth/callback` redirect in its OAuth client. Both are in `outputs/kiku-ai` in this
+> repository. If the deployed Space predates them, redeploy it with `work/deploy_kiku_app.py`.
+
+Requirements, sign-in, the library layout, development notes and troubleshooting are in
+**[kiku_app/README.md](kiku_app/README.md)**.
 
 ## Chrome extension: YouTube to Score
 
@@ -109,50 +189,22 @@ the panel shows **Get audio now**. This helper is left out of the release ZIP; s
 
 More detail, including how each file works: [extension README](outputs/youtube-to-score-extension/README.md).
 
-## Flutter app
-
-[`kiku_app`](kiku_app) is the Kiku AI web app as a Flutter app for Android, iPhone, iPad and Mac:
-**Home**, **Generate** (Simple or Custom, ACE-Step 1.5 or YuE2, Enhance, cover art), **Studio**
-(multitrack takes with Restyle, Rewrite, Extend, YuE2 Cover, Demucs stems, lyrics and added
-instruments), **Score** (SheetSage2 lead sheets that follow the recording) and **Library**. It signs
-in with Hugging Face and uses the same engines and the same private library dataset as the web
-app, so songs, projects and scores move between phone and browser.
-
-- **Try it on Android**: open the latest successful
-  [Kiku AI app workflow run](https://github.com/Reubencfernandes/musical/actions/workflows/kiku-app.yml)
-  and download the `kiku-ai-android` artifact (a test build signed with the debug key).
-- **Build it yourself**: install Flutter, then in `kiku_app` run `flutter pub get` and `flutter run`.
-- The app calls the Kiku-AI Space with the user's token as a bearer header. That support is in
-  `outputs/kiku-ai` in this repository; redeploy the Space with `work/deploy_kiku_app.py` first.
-
-Full details: [kiku_app/README.md](kiku_app/README.md).
-
-## The logo
-
-The mark is a chrysanthemum of dots (*kiku*, 菊) that swirls like sound (*kiku*, 聞く, "to listen"),
-drawn like the dot-matrix musicians. It replaces the earlier dotted "K" with an accent dot, which
-looked too much like Kimi's logo. [`branding/generate.py`](branding/generate.py) draws it and
-writes every icon: the extension's, the web app's favicon, and the Flutter app's launcher icons.
-
-<p align="center"><img src="branding/kiku-mark.svg" width="72" alt=""> &nbsp; <img src="branding/kiku-mark-small.svg" width="32" alt=""></p>
-
-## Quick start
-
-The web app requires Node.js 24 and FFmpeg/ffprobe. From `outputs/kiku-ai`, run `npm ci`, copy `env.example` to `.env.local`, configure a private `SESSION_SECRET` and API/OAuth settings, then run `npm run dev`. Never commit credentials.
-
-For the Flutter apps, install the Flutter SDK, then run `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter run` from `kiku_app` (the Kiku AI app) or `flutter_app` (the on-device experiment). Validated with Flutter 3.44.7 / Dart 3.12.2. iPhone builds require macOS, Xcode, and signing configured for your account.
-
 ## On-device experiment (`flutter_app`)
 
-Separate from the Kiku AI app above, `flutter_app` explores running the models on the device itself. The goal is on-device music generation/transcription, audio editing and export, retaining the orange dot-matrix musicians and existing visual style. See [mobile feasibility notes](docs/mobile-inference.md). Flutter now calls the pinned audio.cpp C API for YuE2 and SheetSage2 GGUF execution, with verified downloads and file export. Actual inference with model weights and Apple device builds still require validation. Incremental generated audio and the Flutter editor are not implemented. No low-end phone compatibility or generation speed is claimed.
+Separate from the Kiku AI app above, `flutter_app` explores running the models on the device
+itself: on-device generation and transcription, audio editing and export, with the same orange
+dot-matrix musicians and visual style. See the [mobile feasibility notes](docs/mobile-inference.md).
 
-`flutter_app` includes model downloads, style/lyrics generation, recording transcription, local result playback/export, device light/dark theme, and the dot-matrix musicians. Follow [Flutter setup](flutter_app/README.md) and [Apple native build instructions](flutter_app/native/README.md). A normal Flutter build alone does not bundle the audio runtime. Browser builds show a native-app notice.
+It calls the pinned audio.cpp C API for YuE2 and SheetSage2 GGUF execution, with verified model
+downloads, style and lyrics generation, recording transcription, local playback and file export.
+Follow [Flutter setup](flutter_app/README.md) and the
+[Apple native build instructions](flutter_app/native/README.md); a normal Flutter build alone
+does not bundle the audio runtime, and browser builds show a native-app notice.
 
-The integration prioritizes iOS/macOS. Android native packaging is pending. Neither phone performance nor universal low-end phone support has been validated.
-
-Model weights are downloaded separately. YuE2 and SheetSage2 have their own noncommercial licenses; this repository does not relicense them. Soundfont attribution is in `outputs/kiku-ai/public/soundfonts/ATTRIBUTION.md`; font notices are in `outputs/kiku-ai/public/fonts/README.md`; bundled abcjs notices accompany the assets.
-
-Development scripts in `work` may retain Windows-specific paths. Review them before use. Credentials, build caches and private test recordings are excluded.
+Its current limits: actual inference with model weights and Apple device builds still need
+validation; incremental generated audio and the editor are not implemented; Android native
+packaging is pending (the integration prioritises iOS and macOS). No phone performance,
+generation speed or low-end phone support is claimed.
 
 ## Deployed architecture
 
@@ -164,10 +216,12 @@ engine's stack, so it has its own Space with the same endpoint names:
 | --- | --- | --- |
 | [Kiku-Engine](https://huggingface.co/spaces/Reubencf/Kiku-Engine) | Gradio + ZeroGPU | SheetSage2, YuE2, ACE-Step, Demucs, and the OAuth client |
 | [Kiku-ACE-Step-15](https://huggingface.co/spaces/Reubencf/Kiku-ACE-Step-15) | Gradio 6 + ZeroGPU | ACE-Step 1.5 (turbo, base and the 1.7B planner) and Demucs |
-| [Kiku-AI](https://huggingface.co/spaces/Reubencf/Kiku-AI) | Docker (CPU) | The Next.js interface |
+| [Kiku-AI](https://huggingface.co/spaces/Reubencf/Kiku-AI) | Docker (CPU) | The Next.js interface and server |
+| [Score-Studio-API](https://huggingface.co/spaces/Reubencf/Score-Studio-API) | Gradio + ZeroGPU | The original transcription API, still the extension's default |
 
 Sources: `outputs/kiku-engine-space`, `outputs/kiku-acestep15-space` and `outputs/kiku-ai`. Deploy with
-`work/deploy_kiku_spaces.py` and `work/deploy_kiku_app.py` (both read `HF_TOKEN`).
+`work/deploy_kiku_spaces.py` and `work/deploy_kiku_app.py` (both read `HF_TOKEN`). Each deploy of
+the Kiku-AI Space restarts it, which ends any job running at the time.
 
 The ACE-Step 1.5 Modal backend is deployed in the active `konkanillm`
 workspace. Source, setup commands, and measured cold/warm timings are in
@@ -175,7 +229,7 @@ workspace. Source, setup commands, and measured cold/warm timings are in
 [the trial report](outputs/kiku-modal/TEST_RESULTS.md). It uses one L40S worker with private
 API access, CPU memory snapshots, and scale-to-zero. The web app routes ACE-Step
 1.5 generation and planning through authenticated server routes to Modal.
-YuE2 now runs on its own private Modal L40S worker (`kiku-yue2`), using the native
+YuE2 runs on its own private Modal L40S worker (`kiku-yue2`), using the native
 PyTorch runtime and CPU import snapshots. Generate allows choosing YuE2 or
 ACE-Step 1.5 in both Simple and Custom mode. SheetSage2, ACE-Step 1 and
 standalone stem/lyrics jobs still use Hugging Face.
@@ -183,7 +237,7 @@ standalone stem/lyrics jobs still use Hugging Face.
 `outputs/score-studio-api`, `outputs/kiku-yue2-space` and `outputs/kiku-acestep-space` are the
 superseded single-model Spaces, kept until the merged engine has run in earnest.
 `outputs/sheetsage2-space` is the original Gradio implementation. `work` holds deployment and
-verification scripts.
+verification scripts. Hosting more than two ZeroGPU Spaces on one account requires PRO.
 
 ### How three models share one Space
 
@@ -198,26 +252,56 @@ constructing, which ZeroGPU refuses outside a `@spaces.GPU` function. SheetSage2
 merges LoRA adapters during load and accepts only CPU float32, so it is cast on the way to
 the GPU.
 
-### Keeping the user's voice
-
-`/accompany` never re-sings the user. It lifts the voice off any backing already on the take
-(Demucs), measures the beat grid and per-bar chords (from the old backing when there is one),
-synthesises a plain guide track on them, and has ACE-Step's audio2audio restyle that guide into
-the requested band before mixing it under the voice. ACE-Step treats a tempo in the prompt as a
-loose hint but follows audio closely, which is why the guide is needed. `Singing2Accompaniment`
-is still unreleased, so the band follows beat and chords, not phrasing.
+### Keeping a tune
 
 YuE2 keeps a tune by working from a score, not the sound: SheetSage2 reads a stretch's melody,
-chords and bar lines, the user can edit that score, YuE2 plays it (a cover, sung or on an
-instrument, or a band on the take's chords), and the render is time-warped bar by bar onto the
-recording's own bar lines so it stays in sync with the rest of the project.
+chords and bar lines, the user can edit that score, and YuE2 performs it (a cover, sung or on an
+instrument). The render is time-warped bar by bar onto the recording's own bar lines, so it
+stays in sync with the rest of the project.
 
-The web app's `/studio` is a multitrack editor built around these endpoints: selections of a
-clip, several clips or a stretch of time can be restyled, rewritten, extended, split into stems,
-or given a band, and single instruments can be added to follow the project.
+The engine also has endpoints that build a band under a kept vocal (`/accompany` and
+`/band_score`): they lift the voice off any backing with Demucs, measure the beat grid and
+per-bar chords, and have ACE-Step or YuE2 play a band on them before mixing it under the voice.
+The studio no longer offers this, but the endpoints remain.
 
-YuE2 and SheetSage2 are CC BY-NC 4.0 (non-commercial); ACE-Step is Apache 2.0 and Demucs is MIT.
-Hosting more than two ZeroGPU Spaces on one account requires PRO.
-Live web app: https://reubencf-score-studio.hf.space/ (to be redeployed as Kiku AI)
-Transcription API: https://reubencf-score-studio-api.hf.space/
-Generation Spaces are in `outputs/kiku-yue2-space` and `outputs/kiku-acestep-space`; neither is deployed yet.
+## Development
+
+| Part | Check it | Run it |
+| --- | --- | --- |
+| Web app (`outputs/kiku-ai`) | `npm run typecheck` | `npm ci`, then `npm run dev` |
+| Flutter app (`kiku_app`) | `flutter analyze`, `flutter test` | `flutter pub get`, then `flutter run` |
+| On-device experiment (`flutter_app`) | `flutter analyze`, `flutter test` | see [its README](flutter_app/README.md) |
+| Extension | load it unpacked | see [its README](outputs/youtube-to-score-extension/README.md) |
+
+Both Flutter projects are validated with Flutter 3.44.7 / Dart 3.12.2. iPhone builds need macOS,
+Xcode and signing set up for your account.
+
+GitHub Actions:
+
+- [`kiku-app.yml`](.github/workflows/kiku-app.yml), on changes to `kiku_app/`: analyzer and
+  tests (including a FLAC check against libFLAC), an Android APK artifact, and iOS and macOS builds.
+- [`extension.yml`](.github/workflows/extension.yml), on changes to the extension: checks the
+  manifest, packages the ZIP and, on `main`, updates the `extension-latest` release.
+
+Development scripts in `work` may still contain Windows-specific paths, so review them before
+use. Credentials, build caches and private test recordings are kept out of the repository.
+
+## The logo
+
+The mark is a chrysanthemum of dots (*kiku*, 菊) that swirls like sound (*kiku*, 聞く, "to listen"),
+drawn like the dot-matrix musicians. It replaces the earlier dotted "K" with an accent dot, which
+looked too much like Kimi's logo. [`branding/generate.py`](branding/generate.py) draws it and
+writes every icon: the extension's, the web app's favicon, and the Flutter app's launcher icons.
+
+<p align="center"><img src="branding/kiku-mark.svg" width="72" alt=""> &nbsp; <img src="branding/kiku-mark-small.svg" width="32" alt=""></p>
+
+## Licences and credits
+
+Model weights are downloaded separately and keep their own licences; this repository does not
+relicense them. YuE2, SheetSage2 and DreamLite-base are CC BY-NC 4.0 (non-commercial); ACE-Step
+is Apache 2.0 and Demucs is MIT. Soundfont attribution is in
+`outputs/kiku-ai/public/soundfonts/ATTRIBUTION.md`, font notices are in
+`outputs/kiku-ai/public/fonts/README.md`, and the bundled abcjs notices travel with its copies.
+
+Kiku AI was formerly called Score Studio; notation remains one of its modes. This repository is
+named `musical`. Original project folder: `E:\ScoreStudio`.
