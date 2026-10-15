@@ -38,8 +38,8 @@ from huggingface_hub.utils import RepositoryNotFoundError
 OWNER = "Reubencf"
 NAME = "Kiku-AI"
 REPO = "%s/%s" % (OWNER, NAME)
-# Must match a redirect_uri registered in the API Space's oauth_metadata(),
-# or sign-in fails with a redirect mismatch.
+# The app serves its own OAuth client document at ORIGIN/oauth/client, listing
+# ORIGIN/auth/callback and the Flutter app's kikuai://oauth/callback.
 ORIGIN = "https://reubencf-kiku-ai.hf.space"
 FOLDER = Path(__file__).resolve().parent.parent / "outputs" / "kiku-ai"
 
@@ -48,10 +48,14 @@ VARIABLES = {
     # One Gradio ZeroGPU Space holds every model; this Docker Space is only the UI.
     "HF_ENGINE_SPACE": "Reubencf/Kiku-Engine",
     "HF_ENGINE_ORIGIN": "https://reubencf-kiku-engine.hf.space",
-    "HF_OAUTH_CLIENT_ID": "https://reubencf-kiku-engine.hf.space/.well-known/oauth-cimd",
+    "HF_OAUTH_CLIENT_ID": ORIGIN + "/oauth/client",
     # ACE-Step 1.5 runs on its own Space; the studio lets users pick it or YuE2.
     "HF_ACE15_SPACE": "Reubencf/Kiku-ACE-Step-15",
     "HF_ACE15_ORIGIN": "https://reubencf-kiku-ace-step-15.hf.space",
+    # Private Modal GPUs (their API credentials are Space secrets, set by hand).
+    "MODAL_ENGINE_ORIGIN": "https://konkanillm--kiku-acestep15-engine-web.modal.run",
+    "MODAL_YUE2_ORIGIN": "https://konkanillm--kiku-yue2-engine-web.modal.run",
+    "MODAL_COVER_ORIGIN": "https://konkanillm--kiku-dreamlite-artwork-web.modal.run",
 }
 IGNORE = ["node_modules/*", ".next/*", ".env*", "*.tsbuildinfo", "__pycache__/*",
           "*.pyc", ".git/*"]
@@ -95,9 +99,8 @@ def main():
     print("Uploaded %s" % FOLDER.name)
     print("\n%s" % ORIGIN)
     print("https://huggingface.co/spaces/%s" % REPO)
-    print("\nDocker builds the Next.js app from source, so the first build takes\n"
-          "several minutes. Sign-in needs %s/auth/callback listed in the API\n"
-          "Space's oauth_metadata(); redeploy that Space if you change the name." % ORIGIN)
+    print("\nDocker builds the Next.js app from source, so the build takes several\n"
+          "minutes. Sign-in uses the client document at %s/oauth/client." % ORIGIN)
 
 
 if __name__ == "__main__":
