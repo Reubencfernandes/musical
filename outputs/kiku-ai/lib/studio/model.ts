@@ -54,6 +54,30 @@ export function audible(project:Project,track:Track){
  return soloed?track.solo:!track.mute;
 }
 
+/** Whether every clip on a track is muted, as a take in use leaves the stretch it stands in for. */
+function clipsMuted(project:Project,track:Track){
+ const clips=project.clips.filter(c=>c.trackId===track.id);
+ return clips.length>0&&clips.every(c=>c.muted);
+}
+/** What a track's mute button shows: the track muted, or nothing left on it to play. */
+export const showsMute=(project:Project,track:Track)=>track.mute||clipsMuted(project,track);
+/** Whether anything on a track is heard. A track that is not goes grey. */
+export const heard=(project:Project,track:Track)=>audible(project,track)&&!clipsMuted(project,track);
+
+/**
+ * Mute a track, or bring it back. Unmuting also brings back its muted clips,
+ * including those a take in use stands in for, so the original then plays
+ * alongside the take: the button always does what it shows.
+ */
+export function muteTrack(project:Project,id:string,mute:boolean):Project{
+ const tracks=project.tracks.map(t=>t.id===id?{...t,mute}:t);
+ if(mute)return {...project,tracks};
+ const back=new Set(project.clips.filter(c=>c.trackId===id&&c.muted).map(c=>c.id));
+ return {...project,
+  tracks:tracks.map(t=>t.take?.hidden.some(c=>back.has(c))?{...t,take:{...t.take,hidden:t.take.hidden.filter(c=>!back.has(c))}}:t),
+  clips:project.clips.map(c=>back.has(c.id)?{...c,muted:false}:c)};
+}
+
 /** Cut a clip in two at a timeline position; returns the ids of both halves. */
 export function splitClip(project:Project,id:string,at:number):[Project,string[]]{
  const clip=project.clips.find(c=>c.id===id);

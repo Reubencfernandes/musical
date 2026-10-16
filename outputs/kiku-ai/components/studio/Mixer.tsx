@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef} from 'react';
-import {type Project,type Track,audible} from '@/lib/studio/model';
+import {type Project,type Track,heard,showsMute} from '@/lib/studio/model';
 import type {Player} from '@/lib/studio/audio';
 
 const FLOOR=-60;
@@ -10,10 +10,10 @@ const toGain=(db:number)=>db<=FLOOR?0:10**(db/20);
 const meterHeight=(peak:number)=>peak<=0?0:Math.max(0,Math.min(1,(toDb(peak)-FLOOR)/(6-FLOOR)));
 
 type Props={project:Project;player:Player;master:number;setMaster:(gain:number)=>void;
- change:(id:string,patch:Partial<Track>)=>void;commitMix:()=>void};
+ change:(id:string,patch:Partial<Track>)=>void;muteTrack:(id:string,mute:boolean)=>void;commitMix:()=>void};
 
 /** A channel strip per track plus the master bus. Faders move live; one undo step is saved per gesture. */
-export default function Mixer({project,player,master,setMaster,change,commitMix}:Props){
+export default function Mixer({project,player,master,setMaster,change,muteTrack,commitMix}:Props){
  const meters=useRef(new Map<string,HTMLElement>());
  useEffect(()=>{
   let frame=0;const held=new Map<string,number>();
@@ -35,9 +35,9 @@ export default function Mixer({project,player,master,setMaster,change,commitMix}
   <Strip name="Master" color="var(--accent)" meter={bind('master')} gain={master}
    onGain={setMaster} onGrab={()=>{}} master/>
   {project.tracks.map((track,i)=><Strip key={track.id} name={track.name} number={i+1} color={track.color}
-   meter={bind(track.id)} gain={track.volume} pan={track.pan} mute={track.mute} solo={track.solo} heard={audible(project,track)}
+   meter={bind(track.id)} gain={track.volume} pan={track.pan} mute={showsMute(project,track)} solo={track.solo} heard={heard(project,track)}
    onGain={volume=>change(track.id,{volume})} onPan={pan=>change(track.id,{pan})}
-   onMute={()=>{commitMix();change(track.id,{mute:!track.mute});}}
+   onMute={()=>muteTrack(track.id,!showsMute(project,track))}
    onSolo={()=>{commitMix();change(track.id,{solo:!track.solo});}}
    onGrab={commitMix}/>)}
   {!project.tracks.length&&<p className="mixer-empty">Channels appear here as you add tracks.</p>}

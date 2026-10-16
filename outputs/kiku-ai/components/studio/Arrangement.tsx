@@ -3,7 +3,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Trash2,Volume2,VolumeX,Plus,AudioWaveform,Download,Check,X,TriangleAlert} from 'lucide-react';
 import Waveform from './Waveform';
 import JobWaveform from './JobWaveform';
-import {type Clip,type Project,type Range,type Selection,type Track,MIN_CLIP,audible,clipEnd,projectEnd,snap,takeAnchor} from '@/lib/studio/model';
+import {type Clip,type Project,type Range,type Selection,type Track,MIN_CLIP,clipEnd,heard,projectEnd,showsMute,snap,takeAnchor} from '@/lib/studio/model';
 import type {Job} from './useJobs';
 
 export const HEADER=244,LANE=88,RULER=32,CHORDS=22;
@@ -17,7 +17,7 @@ type Props={
  /** Scrubbing pauses playback while the ruler is dragged and resumes it from where it is let go. */
  scrubbing:{begin:()=>void;end:(time:number)=>void};
  edit:Edit;jobs:Job[];cancelJob:(id:string)=>void;toggleTake:(id:string)=>void;loop:Range|null;
- changeTrack:(id:string,patch:Partial<Track>)=>void;removeTrack:(id:string)=>void;
+ changeTrack:(id:string,patch:Partial<Track>)=>void;removeTrack:(id:string)=>void;muteTrack:(id:string,mute:boolean)=>void;
  previewTrack:(id:string,patch:Partial<Track>)=>void;addTrack:()=>void;
  dropFiles:(files:File[],time:number)=>void;
  downloadClip:(id:string)=>void;
@@ -279,7 +279,8 @@ useEffect(()=>{
    <div className="arr-rows">
     <div className="arr-headers" style={{height:lanesHeight}}>
      {rows.map(row=>'job' in row?<JobHeader key={row.job.id} job={row.job} now={now} cancel={()=>props.cancelJob(row.job.id)}/>
-      :<TrackHeader key={row.track.id} track={row.track} number={(index.get(row.track.id)??0)+1} heard={audible(project,row.track)}
+      :<TrackHeader key={row.track.id} track={row.track} number={(index.get(row.track.id)??0)+1}
+      heard={heard(project,row.track)} muted={showsMute(project,row.track)} mute={on=>props.muteTrack(row.track.id,on)}
       change={patch=>props.changeTrack(row.track.id,patch)} remove={()=>props.removeTrack(row.track.id)}
       preview={patch=>props.previewTrack(row.track.id,patch)} checkpoint={edit.checkpoint} toggleTake={props.toggleTake}
       selected={selection.range?.tracks.includes(row.track.id)||project.clips.some(c=>c.trackId===row.track.id&&selection.clips.includes(c.id))}
@@ -301,7 +302,7 @@ useEffect(()=>{
          openClipMenu(clip,Math.max(headerWidth,rect.left)+12,rect.top+22);
         }else if(event.key==='Enter'){event.preventDefault();event.stopPropagation();select({clips:[clip.id],range:null});}
        }}
-       className={'clip'+(chosen?' chosen':'')+(clip.muted||track.take&&!track.take.selected?' muted':audible(project,track)?'':' silent')}
+       className={'clip'+(chosen?' chosen':'')+(clip.muted?' muted':heard(project,track)?'':' silent')}
        style={{left:clip.start*zoom,top:row*LANE+2,width:w,height:LANE-4,['--clip' as string]:track.color}}>
        <div className="clip-head">{clip.name}</div>
        <Waveform buffer={buffers.get(clip.buffer)} offset={clip.offset} duration={clip.duration}
@@ -373,7 +374,7 @@ function JobLane({job,now,left,top,width,height}:{job:Job;now:number;left:number
  </div>;
 }
 
-function TrackHeader({track,number,heard,change,preview,checkpoint,remove,selectAll,selected,toggleTake}:{track:Track;number:number;heard:boolean;change:(patch:Partial<Track>)=>void;preview:(patch:Partial<Track>)=>void;checkpoint:()=>void;remove:()=>void;selectAll:()=>void;selected?:boolean;toggleTake:(id:string)=>void}){
+function TrackHeader({track,number,heard,muted,mute,change,preview,checkpoint,remove,selectAll,selected,toggleTake}:{track:Track;number:number;heard:boolean;muted:boolean;mute:(on:boolean)=>void;change:(patch:Partial<Track>)=>void;preview:(patch:Partial<Track>)=>void;checkpoint:()=>void;remove:()=>void;selectAll:()=>void;selected?:boolean;toggleTake:(id:string)=>void}){
  const [name,setName]=useState(track.name);
  useEffect(()=>setName(track.name),[track.name]);
  const take=track.take;
@@ -386,7 +387,7 @@ function TrackHeader({track,number,heard,change,preview,checkpoint,remove,select
     onBlur={()=>{const next=name.trim().slice(0,40);if(next&&next!==track.name)change({name:next});else setName(track.name);}}
     onKeyDown={e=>{if(e.key==='Enter')(e.target as HTMLInputElement).blur();e.stopPropagation();}}/>
     {take&&take.warnings.length>0&&<span className="take-warn" title={take.warnings.join(' ')} aria-label={take.warnings.join(' ')}><TriangleAlert size={12}/></span>}
-    <button className={'ms mute-button'+(track.mute?' on-mute':'')} aria-pressed={track.mute} aria-label={`Mute ${track.name}`} title="Mute" onClick={()=>change({mute:!track.mute})}>{track.mute?<VolumeX size={12}/>:<Volume2 size={12}/>}</button>
+    <button className={'ms mute-button'+(muted?' on-mute':'')} aria-pressed={muted} aria-label={`Mute ${track.name}`} title={muted?'Unmute':'Mute'} onClick={()=>mute(!muted)}>{muted?<VolumeX size={12}/>:<Volume2 size={12}/>}</button>
     <button className={'ms'+(track.solo?' on-solo':'')} aria-pressed={track.solo} title="Solo" onClick={()=>change({solo:!track.solo})}>S</button>
     <button className="ms trash" title="Delete track" aria-label={`Delete ${track.name}`} onClick={remove}><Trash2 size={12}/></button>
    </div>

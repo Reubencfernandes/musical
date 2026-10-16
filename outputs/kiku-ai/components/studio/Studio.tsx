@@ -9,7 +9,7 @@ import Logo from '@/components/Logo';
 import AIPanel,{type Create} from './AIPanel';
 import Browser,{INSTRUMENTS} from './Browser';
 import {useJobs,targetOf,type Target} from './useJobs';
-import {type Project,type Range,type Selection,type Track,EMPTY,addTrack,clipEnd,formatBars,formatTime,projectEnd,selectTake,splitClip,uid} from '@/lib/studio/model';
+import {type Project,type Range,type Selection,type Track,EMPTY,addTrack,clipEnd,formatBars,formatTime,muteTrack,projectEnd,selectTake,splitClip,uid} from '@/lib/studio/model';
 import {Player,encodeWav,renderMix} from '@/lib/studio/audio';
 import {toMp3} from '@/lib/mp3';
 import {NeedsStorage,allowSaving,loadProject,loadSong,newId,projectAudio,saveProject,songAudio} from '@/lib/library';
@@ -248,6 +248,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
   });
   setSelection({clips:[],range:null});
  },[commit]);
+ const setTrackMute=useCallback((id:string,mute:boolean)=>commit(p=>muteTrack(p,id,mute)),[commit]);
  const toggleTake=useCallback((id:string)=>commit(p=>{
   const take=p.tracks.find(t=>t.take?.id===id)?.take;return take?selectTake(p,id,!take.selected):p;
  }),[commit]);
@@ -403,7 +404,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
    zoom={zoom} setZoom={setZoom} tool={tool} division={division}
    position={position} playing={playing} seek={seek} scrubbing={scrubbing}
    edit={{checkpoint,preview,commit}} jobs={running} cancelJob={jobs.cancel} toggleTake={toggleTake} loop={loop}
-   changeTrack={renameTrack} previewTrack={changeTrack} removeTrack={removeTrack}
+   changeTrack={renameTrack} previewTrack={changeTrack} removeTrack={removeTrack} muteTrack={setTrackMute}
    addTrack={()=>commit(p=>addTrack(p,`Audio ${p.tracks.length+1}`)[0])}
    dropFiles={(files,at)=>void importFiles(files,at)} empty={empty}
    downloadClip={id=>{const target=targetOf(latest.current,{clips:[id],range:null});if(target)void download(target);}}/>
@@ -433,7 +434,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
 
   {mixerOpen&&<div className="mixer-drawer"><header><span><SlidersHorizontal size={15}/> Mixer</span><button aria-label="Close mixer" onClick={()=>setMixerOpen(false)}><X size={16}/></button></header>
    <Mixer project={project} player={player} master={master} setMaster={setMaster}
-    change={changeTrack} commitMix={checkpoint}/></div>}
+    change={changeTrack} muteTrack={setTrackMute} commitMix={checkpoint}/></div>}
 
   <footer className="studio-tools" role="toolbar" aria-label="Editing tools">
    <div className="tool-group">
