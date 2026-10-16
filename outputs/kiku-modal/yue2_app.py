@@ -33,7 +33,7 @@ def prepare_models():
                           allow_patterns=entry.get("allow_patterns"))
         models.commit()
     # Used only for recording-conditioned YuE2 jobs. Cache once on CPU too.
-    snapshot_download("openai/whisper-large-v3-turbo")
+    snapshot_download("HeartMuLa/HeartTranscriptor-oss", revision="918f88917c17489c1f8dbae0165cd1019c4d5cd3")
     snapshot_download("m-a-p/SheetSage2", revision="eab522a8168e8b8b8c4856bf8609cd86198f01fe")
     from demucs.pretrained import get_model
     get_model("htdemucs")

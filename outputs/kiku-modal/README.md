@@ -16,7 +16,7 @@ cover and accompaniment adapters. It uses the native PyTorch backend, pinned
 YuE2/VAE weights from `yue2-model-revisions.json`, separate persistent Volumes,
 CPU import snapshots, zero minimum workers, one maximum worker and 120 idle
 seconds before scale-down. YuE2 and its VAE are fetched on CPU before serving;
-Whisper, SheetSage2 and Demucs are cached for recording-conditioned jobs.
+HeartTranscriptor (lyrics), SheetSage2 and Demucs are cached for recording-conditioned jobs.
 
 ```powershell
 python -m modal run --env main outputs/kiku-modal/yue2_app.py::prepare

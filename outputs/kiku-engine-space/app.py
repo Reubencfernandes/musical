@@ -36,7 +36,14 @@ SHEETSAGE_ID = "m-a-p/SheetSage2"
 SHEETSAGE_REV = "eab522a8168e8b8b8c4856bf8609cd86198f01fe"
 YUE2_ID = "m-a-p/YuE2-3B"
 YUE2_VAE = "m-a-p/YuE2-Vae"
-WHISPER_ID = "openai/whisper-large-v3-turbo"
+# HeartTranscriptor: Whisper fine-tuned on separated vocals to write down sung lyrics (Apache 2.0).
+LYRICS_ID = "HeartMuLa/HeartTranscriptor-oss"
+LYRICS_REV = "918f88917c17489c1f8dbae0165cd1019c4d5cd3"
+# Its own decoding settings, from heartlib's examples/run_lyrics_transcription.py.
+LYRICS_DECODING = {"task": "transcribe", "max_new_tokens": 256, "num_beams": 2,
+                   "condition_on_prev_tokens": False, "compression_ratio_threshold": 1.8,
+                   "temperature": (0.0, 0.1, 0.2, 0.4), "logprob_threshold": -1.0,
+                   "no_speech_threshold": 0.4}
 ROOT = Path(os.environ.get("KIKU_OUTPUT_ROOT", str(Path(tempfile.gettempdir()) / "kiku-engine")))
 ROOT.mkdir(exist_ok=True)
 # ACE-Step writes at most four minutes in one pass.
@@ -55,9 +62,9 @@ if os.environ.get("KIKU_RUNTIME") != "modal":
 
 from huggingface_hub import snapshot_download
 
-for repo in (() if os.environ.get("KIKU_RUNTIME") == "modal" else (YUE2_ID, YUE2_VAE, WHISPER_ID)):
+for repo in (() if os.environ.get("KIKU_RUNTIME") == "modal" else (YUE2_ID, YUE2_VAE, LYRICS_ID)):
     try:
-        snapshot_download(repo)
+        snapshot_download(repo, revision=LYRICS_REV if repo == LYRICS_ID else None)
     except Exception:
         logging.exception("Could not pre-fetch %s; it downloads on first use", repo)
 
@@ -90,12 +97,12 @@ def yue2():
     return ENGINES["yue2"]
 
 
-def whisper():
-    if "whisper" not in ENGINES:
+def transcriptor():
+    if "lyrics" not in ENGINES:
         from transformers import pipeline
-        ENGINES["whisper"] = pipeline("automatic-speech-recognition", model=WHISPER_ID,
-                                      torch_dtype=torch.float16, device="cuda")
-    return ENGINES["whisper"]
+        ENGINES["lyrics"] = pipeline("automatic-speech-recognition", model=LYRICS_ID, revision=LYRICS_REV,
+                                     torch_dtype=torch.float16, device="cuda")
+    return ENGINES["lyrics"]
 
 
 def acestep():
@@ -771,20 +778,18 @@ def _sheetsage(mono, rate=24000):
 
 
 def _words(vocal_path):
-    """Whisper's lines with their start and end times."""
+    """The sung lyrics as lines of text, written down by HeartTranscriptor (no timings)."""
+    import re
     import librosa
     mono, _ = librosa.load(vocal_path, sr=16000, mono=True)
     with torch.inference_mode():
-        heard = whisper()({"raw": mono, "sampling_rate": 16000}, return_timestamps=True,
-                          chunk_length_s=30, batch_size=8, generate_kwargs={"task": "transcribe"})
-    lines = []
-    for chunk in heard.get("chunks") or []:
-        text = " ".join((chunk.get("text") or "").split())
-        start, end = (chunk.get("timestamp") or (None, None))
-        if text:
-            lines.append({"start": float(start or 0.0), "end": float(end if end is not None else (start or 0.0)),
-                          "text": text})
-    return lines
+        heard = transcriptor()({"raw": mono, "sampling_rate": 16000}, chunk_length_s=30, batch_size=8,
+                               generate_kwargs=LYRICS_DECODING)
+    text = " ".join((heard.get("text") or "").split())
+    # It writes the lyrics as one run, starting each sung line with a capital (the
+    # pronoun I aside) and sometimes ending sentences: start a line at either.
+    lines = re.split(r"(?<=[.!?。！？])\s*|\s+(?=[A-Z])(?!(?:I|Ill|Im|Ive|Id)\b|I['’])", text)
+    return [line.strip() for line in lines if line and line.strip()]
 
 
 def read_time(audio, words=False, separate="auto", transcribe=True, **kwargs):
@@ -793,7 +798,7 @@ def read_time(audio, words=False, separate="auto", transcribe=True, **kwargs):
     if separate != "never" or words:
         total += 15 + int(seconds * 0.12) + cold("demucs", 40)
     if words:
-        total += 15 + int(seconds * 0.12) + cold("whisper", 60)
+        total += 15 + int(seconds * 0.12) + cold("lyrics", 60)
     return min(600, total)
 
 
@@ -950,9 +955,7 @@ def restage(audio, style, lyrics, voice, harmony, abc, clock, edits, seed, progr
             if own_words:
                 words = scores.lyrics_by_notes(own_words, score)
             elif found and found["lines"]:
-                timing = (found["clock"] or clock
-                          or sync.uniform_starts(len(score.bars), score.seconds(score.bars[0].length)))
-                words = scores.lyrics_by_time(found["lines"], score, timing)
+                words = scores.lyrics_by_notes("\n".join(found["lines"]), score)
             else:
                 raise gr.Error("No words were found in this stretch. Type the lyrics to sing, "
                                "or choose Instrument to play the melody instead.")
@@ -1048,7 +1051,7 @@ def read_score(audio, words, progress=gr.Progress()):
         clock = found["clock"]
         bars = [{"start": clock[i], "end": clock[i + 1], "chords": scores.bar_chords(score, i),
                  "section": bar.sections[-1] if bar.sections else ""} for i, bar in enumerate(score.bars)]
-        lyrics = scores.lyrics_by_time(found["lines"], score, clock) if found["lines"] else ""
+        lyrics = scores.lyrics_by_notes("\n".join(found["lines"]), score) if found["lines"] else ""
         summary = {"bpm": score.bpm, "key": score.bars[0].key, "keyName": scores.key_words(score.bars[0].key),
                    "duration": round(duration, 3), "bars": bars, "clock": clock, "beats": found["beats"],
                    "lyrics": lyrics,
@@ -1062,15 +1065,14 @@ def read_score(audio, words, progress=gr.Progress()):
 
 
 def lyrics_of(audio, progress=gr.Progress()):
-    """Just the words, for the studio's lyrics boxes."""
+    """Just the words, for the studio's lyrics boxes. No score is read for them."""
     guard(audio, "a recording")
     try:
         progress(0.05, desc="Listening to the words")
-        found = _read_take(audio, words=True, separate="auto")
+        found = _read_take(audio, words=True, separate="auto", transcribe=False)
         if not found["lines"]:
             return "No words were found.", ""
-        score = scores.read(found["abc"])
-        return "Found %d lines." % len(found["lines"]), scores.lyrics_by_time(found["lines"], score, found["clock"])
+        return "Found %d lines." % len(found["lines"]), "\n".join(found["lines"]) + "\n"
     except gr.Error:
         raise
     except Exception as exc:
@@ -1342,7 +1344,7 @@ def health():
     return {"status": "ready", "loaded": sorted(ENGINES),
             "models": {"transcription": SHEETSAGE_ID, "songs": YUE2_ID,
                        "instrumental": "ACE-Step-v1-3.5B", "separator": "htdemucs",
-                       "lyrics": WHISPER_ID}}
+                       "lyrics": LYRICS_ID}}
 
 
 def oauth_metadata():

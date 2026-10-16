@@ -99,7 +99,7 @@ export type Spec={
  endpoint:string|((model:Model)=>string);
  /** Models that can serve this job; the first is used when none is named. */
  models?:Model[];
- /** Jobs only the engine serves (SheetSage2, Demucs, Whisper), whatever model is picked. */
+ /** Jobs only the engine serves (SheetSage2, Demucs, HeartTranscriptor), whatever model is picked. */
  fixed?:Engine;
  /** Whether the job sends audio. Parts can be written from a prompt alone. */
  audio?:'required'|'optional'|'none';

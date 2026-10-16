@@ -41,7 +41,7 @@ Space; ZeroGPU only supports the Gradio SDK, so all inference lives here.
 | `/stems` | Split a mix into vocals and instrumental |
 | `/split` | Split a mix into vocals, drums, bass and everything else |
 | `/score` | Reads a stretch into a score: bars with their start times, chords, sections, key, tempo and (optionally) the sung words |
-| `/lyrics` | Whisper transcription of the sung words, grouped under the score's sections |
+| `/lyrics` | The sung words as plain lines, written down by [HeartTranscriptor](https://huggingface.co/HeartMuLa/HeartTranscriptor-oss) from the separated vocal |
 | `/restage` | Covers a stretch with YuE2: the same melody and chords, sung or on an instrument, locked to the original bars |
 | `/band_score` | A YuE2 band that plays the take's own chords and form, locked to its bars, under the real voice |
 
