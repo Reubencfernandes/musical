@@ -13,6 +13,7 @@ import {type Project,type Range,type Selection,type Track,EMPTY,addTrack,clipEnd
 import {Player,encodeWav,renderMix} from '@/lib/studio/audio';
 import {toMp3} from '@/lib/mp3';
 import {NeedsStorage,allowSaving,loadProject,loadSong,newId,projectAudio,saveProject,songAudio} from '@/lib/library';
+import {type Draft,forgetDraft,loadDraft,pruneDrafts,saveDraft,unsavedDraft} from '@/lib/studio/drafts';
 
 type History={past:Project[];present:Project;future:Project[]};
 const DEPTH=100;
@@ -40,7 +41,7 @@ function useHistory(initial:Project){
 
 type Saving='idle'|'saving'|'saved'|'error'|'needs';
 
-export default function Studio({user,signOut,open={}}:{user:{name:string;storage?:boolean};signOut:()=>void;open?:{project?:string;song?:string}}){
+export default function Studio({user,signOut,open={}}:{user:{name:string;storage?:boolean};signOut:()=>void;open?:{project?:string;song?:string;draft?:string}}){
  const player=useMemo(()=>new Player(),[]);
  const buffers=useRef(new Map<string,AudioBuffer>()).current;
  const history=useHistory(EMPTY);
@@ -61,15 +62,23 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
  const recorder=useRef<{media:MediaRecorder;stream:MediaStream;from:number;latency:number}|null>(null);
  const clock=useRef<HTMLSpanElement>(null),bars=useRef<HTMLSpanElement>(null);
  // Saving to the user's library: the project's id once saved, buffers already uploaded, and what changed since.
- const [projectId,setProjectId]=useState<string|null>(null),[saving,setSaving]=useState<Saving>('idle'),[opening,setOpening]=useState(!!(open.project||open.song));
+ const [projectId,setProjectId]=useState<string|null>(null),[saving,setSaving]=useState<Saving>('idle'),[opening,setOpening]=useState(!!(open.project||open.song||open.draft));
  const uploaded=useRef(new Set<string>()),savedAt=useRef<Project|null>(null),created=useRef(new Date().toISOString()),busy=useRef(false);
+ // This browser's copy of the project (lib/studio/drafts), written a moment after every change with the
+ // jobs still running, so a refresh or a lost connection loses nothing. Saved projects keep it under their id.
+ const draftKey=useRef(open.project||open.draft||newId()),retiredKey=useRef<string|null>(null);
+ const draftChanges=useRef(0),draftWritten=useRef(0),hadDraft=useRef(false);
+ const [recovery,setRecovery]=useState<Draft|null>(null);
 
  const position=useCallback(()=>player.position(),[player]);
  const jobs=useJobs({player,buffers,project:()=>latest.current,playhead:position,commit,signedOut:()=>setExpired(true),pause:()=>{player.stop();setPlaying(false);}});
 
  useEffect(()=>()=>{player.close();recorder.current?.stream.getTracks().forEach(t=>t.stop());},[player]);
+ const fragile=useRef(false);fragile.current=jobs.fragile;
  useEffect(()=>{
-  const warn=(event:BeforeUnloadEvent)=>{if(latest.current.clips.length&&latest.current!==savedAt.current){event.preventDefault();}};
+  // The draft covers a refresh; warn only about what one would still lose: jobs that run in the page,
+  // or a change not written to this browser yet.
+  const warn=(event:BeforeUnloadEvent)=>{if(fragile.current||draftWritten.current<draftChanges.current)event.preventDefault();};
   window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);
  },[]);
 
@@ -183,7 +192,11 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
    await saveProject({id,name:projectName.trim()||'Untitled project',createdAt:created.current,updatedAt:new Date().toISOString(),
     duration:projectEnd(snapshot),tracks:snapshot.tracks.length,project:snapshot},buffers,uploaded.current);
    savedAt.current=snapshot;setSaving('saved');
-   if(!projectId){setProjectId(id);window.history.replaceState(null,'','/studio?project='+encodeURIComponent(id));}
+   if(!projectId){
+    // From now on the draft lives under the project's id; the old one goes once the new one is written.
+    retiredKey.current=draftKey.current;draftKey.current=id;
+    setProjectId(id);window.history.replaceState(null,'','/studio?project='+encodeURIComponent(id));
+   }
   }catch(e){setSaving(e instanceof NeedsStorage?'needs':'error');if(!(e instanceof NeedsStorage))setNotice('Saving failed: '+(e as Error).message);}
   finally{busy.current=false;}
  },[buffers,projectId,projectName]);
@@ -193,11 +206,44 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
   if(saving==='saved')setSaving('idle');
   const timer=setTimeout(()=>void saveToLibrary(),30000);return()=>clearTimeout(timer);
  },[project,projectName,saveToLibrary,saving,opening]);
- // Open a saved project, or start one from a song in the library.
+ // Keep this browser's copy a moment after each change, with the jobs still running.
  useEffect(()=>{
-  if(!open.project&&!open.song)return;let active=true;
+  if(opening||!hadDraft.current&&!project.clips.length&&!jobs.pending.length)return;
+  const change=++draftChanges.current;
+  const timer=setTimeout(()=>{
+   const snapshot=latest.current,key=draftKey.current;
+   void saveDraft({key,name:projectName.trim()||'Untitled project',projectId,project:snapshot,saved:snapshot===savedAt.current,
+    createdAt:created.current,uploaded:[...uploaded.current],updatedAt:Date.now(),jobs:jobs.pending},buffers).then(()=>{
+    draftWritten.current=Math.max(draftWritten.current,change);hadDraft.current=true;
+    if(retiredKey.current&&retiredKey.current!==key){void forgetDraft(retiredKey.current).catch(()=>{});retiredKey.current=null;}
+    // A refresh reopens the draft by its key; a saved project reopens by its id.
+    if(!projectId&&new URLSearchParams(location.search).get('draft')!==key)window.history.replaceState(null,'',location.pathname+'?draft='+encodeURIComponent(key));
+   }).catch(()=>{});
+  },600);
+  return()=>clearTimeout(timer);
+ },[project,projectName,projectId,jobs.pending,saving,opening,buffers]);
+ // Starting fresh puts the offer to reopen earlier unsaved work away.
+ useEffect(()=>{if(project.clips.length)setRecovery(null);},[project.clips.length]);
+ // Reopen this browser's copy after a refresh, open a saved project, or start one from a song in the library.
+ useEffect(()=>{
+  let active=true;
   (async()=>{
    try{
+    // This browser's copy wins when it holds work the library lacks: unsaved changes, or jobs still running.
+    const local=open.project||open.draft?await loadDraft(draftKey.current,data=>player.decode(data)).catch(()=>null):null;
+    if(local&&(open.draft||!local.draft.saved||local.draft.jobs.length)){
+     if(!active)return;
+     const {draft}=local;
+     for(const [key,buffer] of local.buffers)buffers.set(key,buffer);
+     uploaded.current=new Set(draft.uploaded);created.current=draft.createdAt;hadDraft.current=true;
+     history.reset(draft.project);setProjectName(draft.name);setProjectId(draft.projectId);
+     if(draft.saved){savedAt.current=draft.project;setSaving('saved');}
+     jobs.resume(draft.jobs);
+     if(draft.jobs.length)setNotice('Picked up where you left off. Your jobs are still running.');
+     else if(!draft.saved)setNotice('Restored your latest changes from this browser.');
+     return;
+    }
+    if(open.draft)throw new Error('That unsaved project is no longer in this browser.');
     if(open.project){
      const entry=await loadProject(open.project);if(!entry)throw new Error('That project was not found in your library.');
      await Promise.all(Object.entries(entry.audio).map(async([key,file])=>{
@@ -211,9 +257,12 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
      const song=await loadSong(open.song),blob=song&&await songAudio(song);if(!song||!blob)throw new Error('That song was not found in your library.');
      const buffer=await player.decode(await blob.arrayBuffer());if(!active)return;
      addAudio(song?.title||'Song',buffer,0);if(song?.title)setProjectName(song.title.slice(0,50));
+    }else{
+     // A fresh studio offers to reopen work this browser still holds.
+     const found=await unsavedDraft().catch(()=>null);if(active&&found)setRecovery(found);
     }
    }catch(e){if(active)setNotice((e as Error).message);}
-   finally{if(active)setOpening(false);}
+   finally{if(active)setOpening(false);void pruneDrafts().catch(()=>{});}
   })();
   return()=>{active=false;};
  },[]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -461,6 +510,10 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
    { [['Play / pause','Space'],['Select tool','V'],['Range tool','R'],['Split clips','S'],['Mute selected clips','M'],['Loop selection','L'],['Undo','Ctrl / ⌘ Z'],['Duplicate clips','Ctrl / ⌘ D']].map(([label,key])=><div className="shortcut" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}
   </div>}
   {notice&&<p className="studio-notice" role="status">{notice}</p>}
+  {recovery&&!notice&&<div className="studio-notice" role="status">
+   <span>Unsaved work from {new Date(recovery.updatedAt).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}{recovery.jobs.length?', with jobs still running':''}.</span>
+   <button onClick={()=>{location.href=location.pathname+'?'+(recovery.projectId?'project=':'draft=')+encodeURIComponent(recovery.key);}}>Open it</button>
+   <button onClick={()=>{void forgetDraft(recovery.key).catch(()=>{});setRecovery(null);}}>Discard</button></div>}
   {expired&&<div className="studio-notice expired" role="alert">Your sign-in expired. Your project is still here.
    <button onClick={()=>{window.open('/auth/login?popup=1','kiku-sign-in','width=520,height=730');setExpired(false);}}>Sign in again</button></div>}
  </div>;

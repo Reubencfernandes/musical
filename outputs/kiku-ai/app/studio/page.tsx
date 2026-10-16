@@ -12,9 +12,9 @@ const Studio=dynamic(()=>import('@/components/studio/Studio'),{ssr:false,
 
 export default function StudioPage(){
  const {user,ready,signOut}=useSession();
- // ?project= reopens a saved project and ?song= starts one from a library song.
- const [open,setOpen]=useState<{project?:string;song?:string}|null>(null);
- useEffect(()=>{const q=new URLSearchParams(location.search);setOpen({project:q.get('project')||undefined,song:q.get('song')||undefined});},[]);
+ // ?project= reopens a saved project, ?draft= one only this browser holds (after a refresh), and ?song= starts one from a library song.
+ const [open,setOpen]=useState<{project?:string;song?:string;draft?:string}|null>(null);
+ useEffect(()=>{const q=new URLSearchParams(location.search);setOpen({project:q.get('project')||undefined,song:q.get('song')||undefined,draft:q.get('draft')||undefined});},[]);
  if(!ready||!open)return <div className="auth-loading"><span className="spinner"/></div>;
  if(!user)return <><ThemeToggle/><SignIn title={<>Your voice.<br/>Your band.</>}
   blurb="Record a take, build a band that follows it, and reshape any part of your song with AI."/></>;

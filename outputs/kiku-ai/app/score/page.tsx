@@ -25,6 +25,12 @@ export default function Home(){
  useEffect(()=>{let active=true;const check=()=>fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{if(active){setUser(data.user);setAuthReady(true);}}).catch(()=>{if(active)setAuthReady(true);});check();window.addEventListener('focus',check);const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('kiku-auth'):null;if(channel)channel.onmessage=()=>check();return()=>{active=false;window.removeEventListener('focus',check);channel?.close();};},[]);
  async function signOut(){const response=await fetch('/api/auth',{method:'DELETE'});if(response.ok||response.status===401){reset();setUser(null);setFile(null);}}
  useEffect(()=>{if(!recording)return;const tick=setInterval(()=>setRecordTime(t=>t+1),1000);return()=>clearInterval(tick);},[recording]);
+ // Transcription runs on a Hugging Face Space from this page, so leaving mid-way would lose it.
+ useEffect(()=>{
+  if(stage!=='processing')return;
+  const warn=(event:BeforeUnloadEvent)=>event.preventDefault();
+  window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);
+ },[stage]);
  // ?saved= reopens a score from the user's library, recording and all.
  useEffect(()=>{
   const id=new URLSearchParams(location.search).get('saved');if(!id||!user||stage!=='input'||result)return;

@@ -7,5 +7,6 @@ import '../../studio.css';
 const Studio=dynamic(()=>import('@/components/studio/Studio'),{ssr:false});
 export default function Page(){
  if(process.env.NODE_ENV!=='development')return null;
- return <Studio user={{name:'Preview'}} signOut={()=>{}}/>;
+ const q=typeof location==='undefined'?null:new URLSearchParams(location.search);
+ return <Studio user={{name:'Preview'}} signOut={()=>{}} open={{draft:q?.get('draft')||undefined}}/>;
 }

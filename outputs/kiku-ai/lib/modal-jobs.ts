@@ -2,19 +2,22 @@ import {randomUUID} from 'node:crypto';
 
 /**
  * Modal jobs outlive the browser connection that started them. Hugging Face's
- * proxy drops long streams now and then; the job keeps running here and the
- * browser reattaches with the job ID, picking up the events it missed, rather
- * than losing a generation that was nearly done. Jobs live in this server's
- * memory, so a restart (a new deployment) still loses the ones in flight.
+ * proxy drops long streams now and then, browsers go offline and pages get
+ * refreshed; the job keeps running here and the browser reattaches with the
+ * job ID (the studio and Generate page keep it locally), picking up the events
+ * it missed, rather than losing a generation that was nearly done. Jobs live
+ * in this server's memory, so a restart (a new deployment) still loses the
+ * ones in flight.
  */
 type Entry={owner:string;events:string[];done:boolean;listeners:Set<()=>void>;cancel:()=>void;detached:number|null;finished:number|null};
 export type Push=(event:Record<string,unknown>)=>void;
 
-const KEEP=10*60*1000,ORPHAN=2*60*1000;
+const KEEP=60*60*1000,ORPHAN=15*60*1000;
 const store=globalThis as typeof globalThis&{kikuModalJobs?:Map<string,Entry>;kikuModalSweep?:ReturnType<typeof setInterval>};
 const jobs=store.kikuModalJobs??=new Map<string,Entry>();
-// Finished jobs are kept long enough to reattach and fetch the result; a job nobody
-// has followed for two minutes (the tab was closed) is cancelled to free the GPU.
+// Finished jobs are kept an hour, so a page reopened later still gets its result; a
+// job nobody has followed for fifteen minutes (the tab was closed for good) is
+// cancelled to free the GPU.
 store.kikuModalSweep??=setInterval(()=>{
  const now=Date.now();
  for(const [id,entry] of jobs){

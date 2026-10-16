@@ -8,7 +8,18 @@ export class SignedOut extends Error{}
 
 /** How far a job has got: the engine's own fraction when it reports one, and the queue's estimate of the time left. */
 export type Progress={fraction:number|null;eta:number|null;queue:number|null;running:boolean};
-type Call={signal:AbortSignal;status:(text:string)=>void;progress?:(p:Progress)=>void};
+/**
+ * `job` hears the server's ID for a Modal job as soon as it exists, so the
+ * caller can keep it and pick the job up again after a refresh (resumeJob).
+ * Jobs on the Hugging Face Spaces run in the page itself and have no such ID.
+ */
+type Call={signal:AbortSignal;status:(text:string)=>void;progress?:(p:Progress)=>void;job?:(id:string)=>void};
+
+/**
+ * Abort with this reason when the page is going away rather than the user
+ * stopping the job: a Modal job then keeps running, to be picked up again.
+ */
+export const LEAVING='leaving';
 
 let cached:{token:string;expires:number}|null=null;
 /**
@@ -65,21 +76,48 @@ async function wavSeconds(file:Blob){
  return rate&&channels?(file.size-44)/(rate*channels*2):null;
 }
 
+const offline=()=>typeof navigator!=='undefined'&&navigator.onLine===false;
+/** Resolves when the browser is back online, or the job is stopped. */
+const backOnline=(signal:AbortSignal)=>new Promise<void>(done=>{
+ if(!offline()){done();return;}
+ const finish=()=>{window.removeEventListener('online',finish);signal.removeEventListener('abort',finish);done();};
+ window.addEventListener('online',finish);signal.addEventListener('abort',finish,{once:true});
+});
+
 /**
  * ACE-Step 1.5 and YuE2 run on our private Modal GPU through the authenticated
  * app server. The job lives on the server, not in this connection: when
- * Hugging Face's proxy drops the stream, this reattaches and carries on from
- * the last event it saw instead of losing the generation.
+ * Hugging Face's proxy drops the stream, or the browser goes offline, this
+ * reattaches and carries on from the last event it saw instead of losing the
+ * generation.
  */
-async function runModal<T>(name:Job,input:Input,{signal,status,progress}:Call):Promise<T>{
+async function runModal<T>(name:Job,input:Input,call:Call):Promise<T>{
+ const {signal,status}=call;
  const form=input instanceof FormData?input:new FormData();
  if(!(input instanceof FormData))for(const [key,value] of Object.entries(input))if(value!==undefined&&value!==null)form.append(key,String(value));
  status('Starting Modal GPU…');
- let id='',seq=0,result:T|undefined,failure:string|null=null;
+ const response=await fetch('/api/modal/jobs?job='+encodeURIComponent(name),{method:'POST',body:form,signal}).catch(error=>{
+  if(signal.aborted)throw error;throw new Error('Could not reach Kiku. Check your connection and try again; nothing was started.');});
+ if(!response.ok){
+  const data=await response.json().catch(()=>({}));
+  if(response.status===401)throw new SignedOut(data.error||'Sign in again to continue.');
+  throw new Error(data.error||'Could not reach the Modal GPU. Try again.');
+ }
+ return followModal<T>(response,'',call);
+}
+
+/** Pick up a Modal job started before a refresh, by the ID `job` heard, and follow it to its result. */
+export function resumeJob<T>(id:string,call:Call):Promise<T>{
+ call.status('Picking up where this left off…');
+ return followModal<T>(null,id,call);
+}
+
+async function followModal<T>(response:Response|null,id:string,{signal,status,progress,job}:Call):Promise<T>{
+ let seq=0,result:T|undefined,failure:string|null=null;
  const receive=(line:string)=>{
   if(!line.trim())return;
   const event=JSON.parse(line);
-  if(event.type==='job'){id=event.id;return;}
+  if(event.type==='job'){if(!id){id=event.id;job?.(id);}return;}
   if(typeof event.seq==='number'){if(event.seq<=seq)return;seq=event.seq;}
   if(event.type==='error')failure=String(event.error||'The Modal generation could not finish.');
   if(event.type==='status'){status(event.message);if(event.progress)progress?.(event.progress);}
@@ -97,28 +135,33 @@ async function runModal<T>(name:Job,input:Input,{signal,status,progress}:Call):P
    }
   }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
  };
- // Stopping a job in the studio stops it on the GPU too.
- const cancel=()=>{if(id&&result===undefined&&failure===null)void fetch('/api/modal/jobs?id='+encodeURIComponent(id),{method:'DELETE',keepalive:true}).catch(()=>{});};
+ // Stopping a job in the studio stops it on the GPU too; leaving the page does not.
+ const cancel=()=>{if(id&&signal.reason!==LEAVING&&result===undefined&&failure===null)void fetch('/api/modal/jobs?id='+encodeURIComponent(id),{method:'DELETE',keepalive:true}).catch(()=>{});};
  signal.addEventListener('abort',cancel,{once:true});
- try{
-  let response:Response|null=await fetch('/api/modal/jobs?job='+encodeURIComponent(name),{method:'POST',body:form,signal}).catch(error=>{
-   if(signal.aborted)throw error;throw new Error('Could not reach Kiku. Check your connection and try again; nothing was started.');});
-  if(!response.ok){
-   const data=await response.json().catch(()=>({}));
-   if(response.status===401)throw new SignedOut(data.error||'Sign in again to continue.');
-   throw new Error(data.error||'Could not reach the Modal GPU. Try again.');
+ // Before reattaching, wait until the browser is back online, or back off after a
+ // dropped connection. Only dropped connections count against the retries.
+ let drops=0;
+ const wait=async()=>{
+  if(offline()){status('You are offline. This carries on by itself when you are back online…');await backOnline(signal);}
+  else{
+   if(drops>=8)throw new Error('The connection to Kiku dropped and could not be restored. Try again; your project is safe.');
+   status('Connection dropped. Reconnecting…');await pause(Math.min(15000,1000*2**drops++),signal);
   }
-  for(let drops=0;;drops++){
-   if(response)await read(response).catch(error=>{if(signal.aborted)throw error;});
-   if(failure!==null)throw new Error(failure);
-   if(result!==undefined)break;
-   if(!id||drops>=8)throw new Error('The connection to Kiku dropped and could not be restored. Try again; your project is safe.');
-   status('Connection dropped. Reconnecting…');
-   await pause(Math.min(15000,1000*2**drops),signal);signal.throwIfAborted();
+  signal.throwIfAborted();
+ };
+ try{
+  for(;;){
+   if(response){
+    await read(response).catch(error=>{if(signal.aborted)throw error;});
+    if(failure!==null)throw new Error(failure);
+    if(result!==undefined)break;
+    if(!id)throw new Error('The connection to Kiku dropped before the job started. Try again; your project is safe.');
+    await wait();
+   }
    response=await fetch('/api/modal/jobs?id='+encodeURIComponent(id)+'&after='+seq,{signal,cache:'no-store'}).catch(error=>{if(signal.aborted)throw error;return null;});
    if(response?.status===401)throw new SignedOut('Sign in again to continue.');
-   if(response?.status===404)throw new Error('Kiku restarted while this was running, so the generation was lost. Try again; your project is safe.');
-   if(response&&!response.ok)response=null;
+   if(response?.status===404)throw new Error('Kiku restarted, or this finished too long ago, so the result was lost. Try again; your project is safe.');
+   if(response?.ok)drops=0;else{response=null;await wait();}
   }
  }finally{signal.removeEventListener('abort',cancel);}
  progress?.({fraction:1,eta:0,queue:null,running:true});
@@ -132,7 +175,7 @@ async function runModal<T>(name:Job,input:Input,{signal,status,progress}:Call):P
  * error) is sent again. Once it is queued it is never resent, so a user is
  * never charged GPU time twice for one click.
  */
-export async function runJob<T>(name:Job,input:Input,{signal,status,progress}:Call):Promise<T>{
+export async function runJob<T>(name:Job,input:Input,{signal,status,progress,job}:Call):Promise<T>{
  const spec=JOBS[name],picked=route(spec,input);
  if('error' in picked)throw new Error(picked.error);
  const {engine,model}=picked,built=spec.build(input,model);
@@ -145,7 +188,7 @@ export async function runJob<T>(name:Job,input:Input,{signal,status,progress}:Ca
   if(seconds!==null&&seconds<limits.min-0.05)throw new Error(`Use at least ${limits.min} seconds of audio.`);
   if(seconds!==null&&seconds>limits.max+0.05)throw new Error(`The engine takes up to ${limits.max/60} minutes at once. Select a shorter part; nothing was submitted.`);
  }
- if(engine===ACE15||engine===YUE2)return runModal<T>(name,input,{signal,status,progress});
+ if(engine===ACE15||engine===YUE2)return runModal<T>(name,input,{signal,status,progress,job});
  const endpoint=typeof spec.endpoint==='function'?spec.endpoint(model):spec.endpoint;
  const token=await hfToken();
  const {handle_file}=await import('@gradio/client');
