@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef} from 'react';
-import type {Project,Track} from '@/lib/studio/model';
+import {type Project,type Track,audible} from '@/lib/studio/model';
 import type {Player} from '@/lib/studio/audio';
 
 const FLOOR=-60;
@@ -35,7 +35,7 @@ export default function Mixer({project,player,master,setMaster,change,commitMix}
   <Strip name="Master" color="var(--accent)" meter={bind('master')} gain={master}
    onGain={setMaster} onGrab={()=>{}} master/>
   {project.tracks.map((track,i)=><Strip key={track.id} name={track.name} number={i+1} color={track.color}
-   meter={bind(track.id)} gain={track.volume} pan={track.pan} mute={track.mute} solo={track.solo}
+   meter={bind(track.id)} gain={track.volume} pan={track.pan} mute={track.mute} solo={track.solo} heard={audible(project,track)}
    onGain={volume=>change(track.id,{volume})} onPan={pan=>change(track.id,{pan})}
    onMute={()=>{commitMix();change(track.id,{mute:!track.mute});}}
    onSolo={()=>{commitMix();change(track.id,{solo:!track.solo});}}
@@ -45,12 +45,12 @@ export default function Mixer({project,player,master,setMaster,change,commitMix}
 }
 
 type StripProps={name:string;number?:number;color:string;meter:(el:HTMLElement|null)=>void;gain:number;pan?:number;
- mute?:boolean;solo?:boolean;master?:boolean;onGain:(gain:number)=>void;onPan?:(pan:number)=>void;
+ mute?:boolean;solo?:boolean;heard?:boolean;master?:boolean;onGain:(gain:number)=>void;onPan?:(pan:number)=>void;
  onMute?:()=>void;onSolo?:()=>void;onGrab:()=>void};
 
 function Strip(props:StripProps){
  const db=toDb(props.gain);
- return <div className={'strip'+(props.master?' strip-master':'')} style={{['--clip' as string]:props.color}}>
+ return <div className={'strip'+(props.master?' strip-master':'')+(props.heard===false?' silent':'')} style={{['--clip' as string]:props.color}}>
   <span className="strip-number">{props.master?'M':props.number}</span>
   {props.onPan?<label className="strip-pan" title={`Pan ${Math.round((props.pan||0)*100)}`}>
    <input type="range" min={-1} max={1} step={0.01} value={props.pan||0} aria-label={`${props.name} pan`}

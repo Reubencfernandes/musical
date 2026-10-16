@@ -140,6 +140,7 @@ button.header-pill:hover,a.header-pill:hover,.project-menu summary:hover{backgro
 .arr-headers{position:sticky;left:0;z-index:5;width:var(--track-header);flex:none;background:#151517;border-right:1px solid #2c2c31}
 .track-head{display:flex;align-items:stretch;border-bottom:1px solid #0c0c0e;border-left:3px solid var(--clip);background:#161618}
 .track-head.selected{background:#202024}
+.track-head.silent{border-left-color:#4a4a52}.track-head.silent .track-name,.track-head.silent .track-number{color:#6c6c76}.track-head.silent .channel-volume{filter:grayscale(1);opacity:.6}
 .track-number{width:26px;flex:none;padding-top:24px;text-align:center;font:10px ui-monospace,monospace;color:#676770;cursor:pointer}
 .track-main{display:flex;flex-direction:column;justify-content:center;gap:13px;padding:0 11px 0 0;min-width:0;flex:1}
 .track-title-row{display:flex;align-items:center;gap:3px}
@@ -175,6 +176,8 @@ button.header-pill:hover,a.header-pill:hover,.project-menu summary:hover{backgro
 .clip-wave{display:block;pointer-events:none}
 .clip.chosen{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--clip) 40%,#e7f2ff),inset 0 0 0 1px #ffffff25,0 4px 12px #0004;z-index:2}
 .clip.muted{filter:grayscale(1);opacity:.3}
+/* A muted track, or one a solo elsewhere silences, goes grey until it is heard again. */
+.clip.silent{filter:grayscale(1);opacity:.45}
 .clip-edge{position:absolute;top:0;bottom:0;left:0;width:8px;cursor:ew-resize;z-index:1}
 .clip-edge.right{left:auto;right:0}
 .clip-edge:hover{background:#ffffff40}
@@ -300,6 +303,7 @@ button.header-pill:hover,a.header-pill:hover,.project-menu summary:hover{backgro
 .mixer-empty{align-self:center;color:#898994;font-size:12px;margin:0 20px}
 .strip{flex:none;width:73px;display:flex;flex-direction:column;align-items:center;gap:5px;background:#25252b;border-top:2px solid var(--clip);border-radius:8px;padding:8px 4px}
 .strip-master{background:#303036}
+.strip.silent{border-top-color:#4a4a52}.strip.silent .strip-pan,.strip.silent .strip-body,.strip.silent .strip-name{filter:grayscale(1);opacity:.55}
 .strip-number{font:9px ui-monospace,monospace;color:#81818f}
 .strip-pan{height:16px;display:flex;align-items:center}
 .strip-pan input{width:58px;accent-color:var(--clip)}

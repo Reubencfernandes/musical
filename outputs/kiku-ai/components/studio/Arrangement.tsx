@@ -3,7 +3,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Trash2,Volume2,VolumeX,Plus,AudioWaveform,Download,Check,X,TriangleAlert} from 'lucide-react';
 import Waveform from './Waveform';
 import JobWaveform from './JobWaveform';
-import {type Clip,type Project,type Range,type Selection,type Track,MIN_CLIP,clipEnd,projectEnd,snap,takeAnchor} from '@/lib/studio/model';
+import {type Clip,type Project,type Range,type Selection,type Track,MIN_CLIP,audible,clipEnd,projectEnd,snap,takeAnchor} from '@/lib/studio/model';
 import type {Job} from './useJobs';
 
 export const HEADER=244,LANE=88,RULER=32,CHORDS=22;
@@ -279,7 +279,7 @@ useEffect(()=>{
    <div className="arr-rows">
     <div className="arr-headers" style={{height:lanesHeight}}>
      {rows.map(row=>'job' in row?<JobHeader key={row.job.id} job={row.job} now={now} cancel={()=>props.cancelJob(row.job.id)}/>
-      :<TrackHeader key={row.track.id} track={row.track} number={(index.get(row.track.id)??0)+1}
+      :<TrackHeader key={row.track.id} track={row.track} number={(index.get(row.track.id)??0)+1} heard={audible(project,row.track)}
       change={patch=>props.changeTrack(row.track.id,patch)} remove={()=>props.removeTrack(row.track.id)}
       preview={patch=>props.previewTrack(row.track.id,patch)} checkpoint={edit.checkpoint} toggleTake={props.toggleTake}
       selected={selection.range?.tracks.includes(row.track.id)||project.clips.some(c=>c.trackId===row.track.id&&selection.clips.includes(c.id))}
@@ -301,7 +301,7 @@ useEffect(()=>{
          openClipMenu(clip,Math.max(headerWidth,rect.left)+12,rect.top+22);
         }else if(event.key==='Enter'){event.preventDefault();event.stopPropagation();select({clips:[clip.id],range:null});}
        }}
-       className={'clip'+(chosen?' chosen':'')+(clip.muted||track.take&&!track.take.selected?' muted':'')}
+       className={'clip'+(chosen?' chosen':'')+(clip.muted||track.take&&!track.take.selected?' muted':audible(project,track)?'':' silent')}
        style={{left:clip.start*zoom,top:row*LANE+2,width:w,height:LANE-4,['--clip' as string]:track.color}}>
        <div className="clip-head">{clip.name}</div>
        <Waveform buffer={buffers.get(clip.buffer)} offset={clip.offset} duration={clip.duration}
@@ -373,11 +373,11 @@ function JobLane({job,now,left,top,width,height}:{job:Job;now:number;left:number
  </div>;
 }
 
-function TrackHeader({track,number,change,preview,checkpoint,remove,selectAll,selected,toggleTake}:{track:Track;number:number;change:(patch:Partial<Track>)=>void;preview:(patch:Partial<Track>)=>void;checkpoint:()=>void;remove:()=>void;selectAll:()=>void;selected?:boolean;toggleTake:(id:string)=>void}){
+function TrackHeader({track,number,heard,change,preview,checkpoint,remove,selectAll,selected,toggleTake}:{track:Track;number:number;heard:boolean;change:(patch:Partial<Track>)=>void;preview:(patch:Partial<Track>)=>void;checkpoint:()=>void;remove:()=>void;selectAll:()=>void;selected?:boolean;toggleTake:(id:string)=>void}){
  const [name,setName]=useState(track.name);
  useEffect(()=>setName(track.name),[track.name]);
  const take=track.take;
- return <div className={'track-head'+(selected?' selected':'')+(take?' take-head':'')} style={{height:LANE,['--clip' as string]:track.color}} onClick={e=>{if(e.target===e.currentTarget)selectAll();}}>
+ return <div className={'track-head'+(selected?' selected':'')+(take?' take-head':'')+(heard?'':' silent')} style={{height:LANE,['--clip' as string]:track.color}} onClick={e=>{if(e.target===e.currentTarget)selectAll();}}>
   {take?<button className={'take-use'+(take.selected?' on':'')} aria-pressed={take.selected} onClick={()=>toggleTake(take.id)}
    aria-label={take.selected?`Stop using ${take.label} take`:`Use ${take.label} take`} title={take.selected?'Using this take. Click to hear the original.':'Use this take in place of the original'}>{take.selected&&<Check size={12} strokeWidth={3}/>}</button>
    :<span className="track-number" onClick={selectAll}>{number}</span>}
