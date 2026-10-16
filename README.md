@@ -288,10 +288,11 @@ use. Credentials, build caches and private test recordings are kept out of the r
 
 ## The logo
 
-The mark is a chrysanthemum of dots (*kiku*, 菊) that swirls like sound (*kiku*, 聞く, "to listen"),
-drawn like the dot-matrix musicians. It replaces the earlier dotted "K" with an accent dot, which
-looked too much like Kimi's logo. [`branding/generate.py`](branding/generate.py) draws it and
-writes every icon: the extension's, the web app's favicon, and the Flutter app's launcher icons.
+The mark is a bold pixel K on an orange tile, drawn in the same pixel language as the dot-matrix
+musicians. In the web and Flutter apps its pixels drop in when it appears, and a wave runs through
+them every few seconds. Icons of 32 px and under use a plainer K that sits exactly on the pixel grid.
+[`branding/generate.py`](branding/generate.py) draws it and writes every icon: the extension's, the
+web app's favicon, and the Flutter app's launcher icons.
 
 <p align="center"><img src="branding/kiku-mark.svg" width="72" alt=""> &nbsp; <img src="branding/kiku-mark-small.svg" width="32" alt=""></p>
 

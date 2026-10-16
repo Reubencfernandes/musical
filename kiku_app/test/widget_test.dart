@@ -17,6 +17,24 @@ void main() {
     }
   });
 
+  testWidgets('the mark drops in, waves every few seconds, and keeps still when asked', (tester) async {
+    await tester.pumpWidget(_app(const KikuMark(size: 64)));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.hasRunningAnimations, isFalse, reason: 'nothing runs between waves');
+    await tester.pump(const Duration(milliseconds: 3800));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isTrue, reason: 'a wave five seconds in');
+    await tester.pump(const Duration(seconds: 2));
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(_app(const KikuMark(key: ValueKey('still'), size: 64)));
+    await tester.pump(const Duration(seconds: 6));
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
   testWidgets('song art and banners render', (tester) async {
     var closed = false;
     await tester.pumpWidget(_app(Column(

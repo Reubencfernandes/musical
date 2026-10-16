@@ -191,7 +191,7 @@ flutter test
 - **Score engraving** uses `assets/score/engrave.js`, compiled from the web app's
   `lib/engrave.ts`. After changing that file, run `npm ci` in `outputs/kiku-ai`, then
   `sh tool/score_assets.sh` from `kiku_app`. Don't edit the generated file.
-- **Icons and the logo**: the launcher icons and `lib/ui/logo_dots.g.dart` come from
+- **Icons and the logo**: the launcher icons and `lib/ui/logo_pixels.g.dart` come from
   [`branding/generate.py`](../branding/generate.py).
 - **Shared formats**: the app mirrors parts of the web app, and the two must stay in step:
   `lib/studio/project.dart` and `outputs/kiku-ai/lib/studio/model.ts` (the project JSON);
