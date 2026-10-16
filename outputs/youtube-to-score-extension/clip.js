@@ -7,6 +7,7 @@ import {scorePdf} from './pdf.js';
 import {SheetPlayer, performance as perform} from './playback.js';
 import {animatePerformer} from './dots.js';
 import {songInfo} from './title.js';
+import {spaceToken} from './hf-auth.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -384,7 +385,8 @@ function busy(on) {
 async function run() {
   if (job || !clip) return;
   setError('');
-  const {space, token} = await chrome.storage.local.get(['space', 'token']);
+  const {space} = await chrome.storage.local.get('space');
+  const token = await spaceToken();
   const controller = new AbortController();
   const started = Date.now();
   let label = 'Starting';

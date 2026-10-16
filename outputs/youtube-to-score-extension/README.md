@@ -12,8 +12,9 @@ and unzip it, or use this folder from a clone of the repository. Then:
 1. Open `chrome://extensions` and switch on **Developer mode**.
 2. Click **Load unpacked** and pick the folder that holds `manifest.json`.
 3. Pin **YouTube to Score** to the toolbar.
-4. Optional but recommended: open the popup → **SheetSage settings** and paste a Hugging Face
-   token (read access). Without one, the Space's anonymous ZeroGPU quota runs out after a few clips.
+4. Recommended: click **Sign in with Hugging Face** in the panel. Transcriptions then run on your
+   own ZeroGPU quota; without it, the Space's anonymous quota runs out after a few clips. (Pasting
+   an access token under **SheetSage settings** still works instead.)
 
 ## Use
 
@@ -84,6 +85,7 @@ can be edited on the page. SheetSage2's own PDF, PNG pages, MIDI and ABC are sti
 | `score.js` | Reads SheetSage2's ABC (the native dialect), arranges it and writes MusicXML |
 | `sheet.js` | Engraves MusicXML into pages with Verovio and follows the recording bar by bar |
 | `title.js` | Song title and artist from a YouTube title and channel |
+| `hf-auth.js` | Hugging Face sign-in (OAuth with PKCE through `chrome.identity`); the Kiku AI Space serves its client document and forwards the answer back to the extension |
 | `db.js` | IndexedDB storage for captures and results |
 
 It records what the tab plays (`chrome.tabCapture`) instead of downloading YouTube's streams, so

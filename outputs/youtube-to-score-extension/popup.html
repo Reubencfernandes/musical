@@ -75,13 +75,26 @@
   <button id="dismiss" class="pill" type="button">OK</button>
 </section>
 
+<section id="account" class="account" aria-live="polite">
+  <div id="signed-out" class="account-out">
+    <button id="sign-in" class="pill hf-sign-in" type="button"><span aria-hidden="true">🤗</span>Sign in with Hugging Face</button>
+    <p id="account-note" class="small muted">Transcriptions then run on your own ZeroGPU quota instead of the shared anonymous one, which runs out after a few clips.</p>
+  </div>
+  <div id="signed-in" class="account-in hidden">
+    <img id="account-picture" class="avatar hidden" alt="" width="28" height="28" referrerpolicy="no-referrer">
+    <span class="account-name"><span>Signed in as <strong id="account-handle"></strong></span><span class="small muted">Transcriptions use your own ZeroGPU quota.</span></span>
+    <button id="sign-out" class="text-button" type="button">Sign out</button>
+  </div>
+  <p id="account-error" class="alert hidden" role="alert"></p>
+</section>
+
 <details id="settings">
   <summary>SheetSage settings</summary>
   <label class="field-label" for="space">Space</label>
   <input id="space" type="text" spellcheck="false" placeholder="Reubencf/Score-Studio-API">
-  <label class="field-label" for="token">Hugging Face token <span class="muted">(optional)</span></label>
+  <label class="field-label" for="token">Access token <span class="muted">(instead of signing in)</span></label>
   <input id="token" type="password" spellcheck="false" placeholder="hf_…">
-  <p class="small muted">With a token, transcription uses your own ZeroGPU quota and can reach private Spaces. It is stored only in this browser.</p>
+  <p class="small muted">Used only while you are signed out. A token can also reach private Spaces. It is stored only in this browser.</p>
   <div class="row"><button id="save-settings" class="pill" type="button">Save</button><span id="saved" class="small muted hidden">Saved</span></div>
 </details>
 

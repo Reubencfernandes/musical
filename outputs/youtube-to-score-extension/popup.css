@@ -46,6 +46,17 @@ form, section { display: grid; gap: 12px; }
 .actions { display: flex; align-items: center; gap: 10px; width: 100%; }
 .actions .pill.primary { flex: 1; }
 
+/* Hugging Face account */
+.account { border-top: 1px solid var(--line); padding-top: 12px; gap: 8px; }
+.account-out { display: grid; gap: 8px; }
+.hf-sign-in { width: 100%; min-height: 42px; font-weight: 600; }
+.hf-sign-in span { font-size: 17px; line-height: 1; }
+.account-in { display: flex; align-items: center; gap: 10px; }
+.avatar { border-radius: 50%; flex: none; background: var(--surface); }
+.account-name { display: grid; flex: 1; min-width: 0; font-size: 13px; }
+.account-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-in .text-button { margin-left: auto; }
+
 details { border-top: 1px solid var(--line); padding-top: 12px; }
 summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 details[open] { display: grid; gap: 8px; }

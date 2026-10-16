@@ -13,7 +13,7 @@ export function spaceUrl(space) {
 
 async function failure(res, step) {
   if ([401, 403, 404].includes(res.status)) {
-    return `The Space refused the ${step} (${res.status}). Check the Space name, and add a Hugging Face token if it is private.`;
+    return `The Space refused the ${step} (${res.status}). Check the Space name, and sign in with Hugging Face if it is private.`;
   }
   const text = (await res.text().catch(() => '')).slice(0, 200);
   return `The ${step} failed (${res.status}). ${text}`.trim();
@@ -90,7 +90,7 @@ async function call({space, token, blob, filename, seconds, melodyOnly, piano, o
         : last
           ? 'SheetSage2 could not transcribe this clip. Try a shorter excerpt.'
           : 'The Space turned the request away without saying why — usually the anonymous ZeroGPU quota is used up. '
-            + 'Add a Hugging Face token in the extension settings, or try again later.');
+            + 'Sign in with Hugging Face in the extension panel to use your own quota, or try again later.');
     }
   }
   if (last) return last;

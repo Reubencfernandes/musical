@@ -2,6 +2,7 @@ import {clock, parseClock} from './time.js';
 import {DEFAULT_SPACE} from './sheetsage.js';
 import {animateWave, drawTimeline} from './dots.js';
 import {putClip} from './db.js';
+import {signIn, signOut, getAccount} from './hf-auth.js';
 
 const $ = (id) => document.getElementById(id);
 const WATCH = /^https:\/\/(www|music)\.youtube\.com\/watch\?/;
@@ -298,11 +299,13 @@ async function init() {
   const saved = await chrome.storage.local.get(['space', 'token']);
   $('space').value = saved.space || DEFAULT_SPACE;
   $('token').value = saved.token || '';
+  renderAccount();
 
   const {capture} = await chrome.storage.session.get('capture');
   await renderState(capture);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'session' && changes.capture) renderState(changes.capture.newValue);
+    if (area === 'local' && changes.account) renderAccount();
     // The icon was clicked in this tab after Record asked for it: record now.
     const invoked = area === 'session' && changes.invoked?.newValue;
     if (invoked && invoked.tabId === tab?.id && waitingForClick && Date.now() - waitingForClick < 120000 && shown === 'setup') {
@@ -362,6 +365,35 @@ $('close-panel').addEventListener('click', async () => {
 const restart = () => { if (shown !== 'recording') location.reload(); };
 chrome.tabs.onActivated.addListener(({windowId}) => { if (windowId === tab?.windowId) restart(); });
 chrome.tabs.onUpdated.addListener((tabId, change) => { if (tabId === tab?.id && change.url) restart(); });
+/** Shows who is signed in to Hugging Face, renewing an expired sign-in quietly when it can. */
+async function renderAccount() {
+  let account = await getAccount();
+  if (account?.expired) account = await signIn({interactive: false}).catch(() => null);
+  $('signed-out').classList.toggle('hidden', !!account);
+  $('signed-in').classList.toggle('hidden', !account);
+  if (!account) return;
+  $('account-handle').textContent = `@${account.handle}`;
+  $('account-picture').classList.toggle('hidden', !account.picture);
+  if (account.picture) $('account-picture').src = account.picture;
+}
+
+$('sign-in').addEventListener('click', async () => {
+  $('account-error').classList.add('hidden');
+  $('sign-in').disabled = true;
+  try {
+    await signIn();
+  } catch (err) {
+    if (err.message !== 'Sign-in was cancelled.') {
+      $('account-error').textContent = err.message;
+      $('account-error').classList.remove('hidden');
+    }
+  } finally {
+    $('sign-in').disabled = false;
+    renderAccount();
+  }
+});
+$('sign-out').addEventListener('click', async () => { await signOut(); renderAccount(); });
+
 $('save-settings').addEventListener('click', async () => {
   await chrome.storage.local.set({space: $('space').value.trim() || DEFAULT_SPACE, token: $('token').value.trim()});
   $('saved').classList.remove('hidden');
