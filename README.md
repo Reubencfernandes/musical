@@ -293,11 +293,11 @@ use. Credentials, build caches and private test recordings are kept out of the r
 
 ## The logo
 
-The mark is a bold pixel K on an orange tile, drawn in the same pixel language as the dot-matrix
-musicians. In the web and Flutter apps its pixels drop in when it appears, and a wave runs through
-them every few seconds. Icons of 32 px and under use a plainer K that sits exactly on the pixel grid.
-[`branding/generate.py`](branding/generate.py) draws it and writes every icon: the extension's, the
-web app's favicon, and the Flutter app's launcher icons.
+The listening K combines a curved receiver, two swept sound ribbons and a point in the open
+center. It stands alone in orange inside the apps and sits on warm charcoal for app icons.
+The ribbons unfold on entry, then briefly respond to a traveling signal every five seconds;
+reduced-motion settings keep the mark still. [`branding/generate.py`](branding/generate.py)
+shares the vector geometry between React, Flutter, the extension icons and every launcher icon.
 
 <p align="center"><img src="branding/kiku-mark.svg" width="72" alt=""> &nbsp; <img src="branding/kiku-mark-small.svg" width="32" alt=""></p>
 
