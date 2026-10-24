@@ -7,6 +7,7 @@ import {scorePdf} from './pdf.js';
 import {SheetPlayer, performance as perform} from './playback.js';
 import {animatePerformer} from './dots.js';
 import {songInfo} from './title.js';
+import {renderLetters, lettersText} from './letters.js';
 import {spaceToken} from './hf-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,8 @@ let drawn = null;
 let drawToken = 0;
 let highlighter = null;
 let xmlUrl = '';
+let textUrl = '';
+let litNote = null;
 let printed = false;
 let saveTimer = 0;
 let drawTimer = 0;
@@ -90,36 +93,73 @@ function deleteButton(c) {
   return button;
 }
 
-async function renderList() {
-  const list = $('clips');
-  list.replaceChildren();
-  for (const c of await listClips()) {
-    const li = document.createElement('li');
-    const a = document.createElement('a');
-    a.href = here({id: c.id});
-    if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = c.title || 'Untitled';
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.append(`${clock(c.start)}–${clock(c.start + c.seconds)}`);
-    if (c.scored) meta.append(Object.assign(document.createElement('span'), {className: 'tag', textContent: 'Score'}));
-    meta.append(Object.assign(document.createElement('span'), {className: 'when', textContent: new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}));
-    a.title = c.title || 'Untitled';
-    a.append(name, meta);
-    li.className = 'clip-item';
-    li.append(a, deleteButton(c));
-    list.append(li);
-  }
-  $('clip-count').textContent = String(list.children.length || '');
-  if (!list.children.length) {
-    const li = document.createElement('li');
-    li.className = 'muted small';
-    li.textContent = 'Nothing recorded yet.';
-    list.append(li);
+const span = (className, text) => Object.assign(document.createElement('span'), {className, textContent: text});
+
+/** The video's YouTube thumbnail, from the address the capture was made at. */
+function thumbnail(url) {
+  try {
+    const id = new URL(url).searchParams.get('v');
+    return id && /^[\w-]{6,20}$/.test(id) ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : '';
+  } catch {
+    return '';
   }
 }
+
+let clips = [];
+async function renderList() {
+  clips = await listClips();
+  const count = String(clips.length || '');
+  $('clip-count').textContent = count;
+  $('tab-count').textContent = count;
+  // Searching helps once the list is longer than a screen.
+  $('search-wrap').classList.toggle('hidden', clips.length < 7);
+  showList();
+}
+
+function showList() {
+  const list = $('clips');
+  const query = $('clip-search').value.trim().toLowerCase();
+  const shown = [];
+  for (const c of clips) {
+    const guess = songInfo(c.title, c.channel);
+    const title = (c.sheet?.title ?? guess.title).trim() || c.title || 'Untitled';
+    const artist = (c.sheet?.artist ?? guess.artist).trim();
+    if (query && ![title, artist, c.title].some((t) => t?.toLowerCase().includes(query))) continue;
+    const a = document.createElement('a');
+    a.href = here({id: c.id});
+    a.title = c.title || title;
+    if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
+    const thumb = span('thumb', '');
+    const src = thumbnail(c.url);
+    if (src) {
+      const img = Object.assign(document.createElement('img'), {src, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer'});
+      // A removed or private video has no thumbnail: leave the plain tile.
+      img.addEventListener('error', () => img.remove());
+      thumb.append(img);
+    }
+    thumb.append(span('length', clock(c.seconds)));
+    const text = span('clip-text', '');
+    text.append(span('name', title));
+    if (artist) text.append(span('artist', artist));
+    const meta = span('meta', `${clock(c.start)}–${clock(c.start + c.seconds)} · ${new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}`);
+    if (c.scored) meta.append(span('tag', 'Score'));
+    text.append(meta);
+    a.append(thumb, text);
+    const li = document.createElement('li');
+    li.className = 'clip-item';
+    li.append(a, deleteButton(c));
+    shown.push(li);
+  }
+  if (!shown.length) {
+    const li = document.createElement('li');
+    li.className = 'clips-empty';
+    li.textContent = query ? `No capture matches “${$('clip-search').value.trim()}”.`
+      : 'Nothing recorded yet. Open a song on YouTube and record the part you want as sheet music.';
+    shown.push(li);
+  }
+  list.replaceChildren(...shown);
+}
+$('clip-search').addEventListener('input', showList);
 
 // ---- the engraved score ------------------------------------------------------
 
@@ -134,15 +174,18 @@ function syncControls(arranged) {
   $('sheet-title').value = sheet.title;
   $('sheet-artist').value = sheet.artist;
   const layout = arranged ? arranged.layout : sheet.layout;
+  const letters = sheet.notation === 'letters';
+  for (const button of document.querySelectorAll('[data-notation]')) button.setAttribute('aria-checked', String(button.dataset.notation === sheet.notation));
   for (const button of document.querySelectorAll('[data-layout]')) {
     button.setAttribute('aria-checked', String(button.dataset.layout === layout));
-    if (button.dataset.layout === 'piano') {
-      button.disabled = arranged ? !arranged.hasChords : false;
-      button.title = button.disabled ? 'SheetSage2 found no chords to write a left hand from.' : '';
-    }
+    // Letters spell out the tune only, so the staff layout does not apply to them.
+    button.disabled = letters || (button.dataset.layout === 'piano' && arranged ? !arranged.hasChords : false);
+    button.title = letters ? 'Letters show the tune and its chords; switch to Sheet music for a layout.'
+      : button.disabled ? 'SheetSage2 found no chords to write a left hand from.' : '';
   }
   $('sheet-hand').value = sheet.hand;
-  $('sheet-hand').disabled = layout !== 'piano';
+  $('sheet-hand').disabled = letters || layout !== 'piano';
+  $('download-pdf').classList.toggle('hidden', letters);
   if (arranged) $('key-name').value = keyLabel(arranged.key.name, sheet.transpose);
   $('key-down').disabled = sheet.transpose <= -6;
   $('key-up').disabled = sheet.transpose >= 6;
@@ -150,7 +193,9 @@ function syncControls(arranged) {
   $('sheet').style.setProperty('--zoom', sheet.zoom);
   $('track-title').textContent = sheet.title || 'Score';
   heading();
-  $('sheet-note').textContent = layout === 'lead'
+  $('sheet-note').textContent = letters
+    ? 'Letters: the tune SheetSage2 heard as note names, with its chords above. Click a bar to play from there; Print makes a paper copy.'
+    : layout === 'lead'
     ? 'Lead sheet: the tune SheetSage2 heard, with its chord symbols. Click a bar to play from there.'
     : 'Piano: the tune SheetSage2 heard, over a left hand written from its chords. Click a bar to play from there.';
 }
@@ -225,7 +270,10 @@ async function setupSheet(result) {
   if (token !== drawToken) return;
   timing = {pickup: pickup ?? pickupUnits(report.diagnostics, native.grid), downbeats, duration: report.duration_seconds || clip.seconds};
   const guess = songInfo(clip.title, clip.channel);
-  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, ...clip.sheet};
+  // New sheets show the music the way the reader last chose.
+  const {notation} = await chrome.storage.local.get('notation');
+  if (token !== drawToken) return;
+  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, notation: notation || 'staff', ...clip.sheet};
   $('speed').value = String(sheet.speed);
   syncControls(null);
   await drawSheet();
@@ -240,26 +288,36 @@ async function drawSheet() {
     const arranged = arrange(native, {layout: sheet.layout, accompaniment: sheet.hand, transpose: sheet.transpose, pickup: timing.pickup});
     const header = {title: sheet.title.trim() || 'Untitled', composer: sheet.artist.trim(), credit: CREDIT};
     const xml = toMusicXML(arranged, {title: header.title, composer: header.composer, arranger: CREDIT});
-    const svgs = await engrave(xml, header);
+    const letters = sheet.notation === 'letters';
+    const svgs = letters ? null : await engrave(xml, header);
     if (token !== drawToken) return;
     highlighter?.destroy();
-    container.replaceChildren(...svgs.map((svg, i) => {
-      const page = document.createElement('div');
-      page.className = 'page';
-      // Verovio's SVG is built here from our own MusicXML, with every text escaped.
-      page.innerHTML = svg;
-      if (i) page.append(Object.assign(document.createElement('span'), {className: 'page-number', textContent: String(i + 1)}));
-      return page;
-    }));
-    highlighter = new Highlighter(container, {topInset: 96});
+    litNote = null;
+    const words = {...header, note: AI_NOTE};
+    if (letters) container.replaceChildren(renderLetters(arranged, words));
+    else {
+      container.replaceChildren(...svgs.map((svg, i) => {
+        const page = document.createElement('div');
+        page.className = 'page';
+        // Verovio's SVG is built here from our own MusicXML, with every text escaped.
+        page.innerHTML = svg;
+        if (i) page.append(Object.assign(document.createElement('span'), {className: 'page-number', textContent: String(i + 1)}));
+        return page;
+      }));
+    }
+    highlighter = new Highlighter(container, {topInset: inPanel ? 124 : 96, selector: letters ? '.letter-bar' : 'svg g.measure'});
     highlighter.follow = $('follow').checked;
-    drawn = {svgs, xml, header, arranged};
+    drawn = {svgs, xml, header, arranged, letters};
     if (sync) await stopSync();
     await player.load(perform(arranged, sheet.speed));
     if (xmlUrl) URL.revokeObjectURL(xmlUrl);
     xmlUrl = URL.createObjectURL(new Blob([xml], {type: 'application/vnd.recordare.musicxml+xml'}));
     $('sheet-xml').href = xmlUrl;
     $('sheet-xml').download = `${safeName(header.title)}.musicxml`;
+    if (textUrl) URL.revokeObjectURL(textUrl);
+    textUrl = URL.createObjectURL(new Blob([lettersText(arranged, words)], {type: 'text/plain;charset=utf-8'}));
+    $('letters-txt').href = textUrl;
+    $('letters-txt').download = `${safeName(header.title)} (letter notes).txt`;
     syncControls(arranged);
     updateTransport();
     if (params.get('print') === '1' && !printed) {
@@ -293,11 +351,28 @@ function updateTransport() {
   icon($('play'), player.playing ? 'pause' : 'play');
 }
 
+/** In letters, lights the note sounding at `time` (in the performance) inside bar `index`. */
+function lightNote(index, time) {
+  let note = null;
+  const bar = drawn?.letters && index >= 0 ? player.piece?.bars[index] : null;
+  if (bar) {
+    const unit = ((time - bar.start) / (bar.end - bar.start)) * drawn.arranged.measures[index].length;
+    note = [...(highlighter.measures[index]?.querySelectorAll('.ln:not(.rest)') ?? [])]
+      .find((n) => unit >= Number(n.dataset.at) && unit < Number(n.dataset.at) + Number(n.dataset.units)) ?? null;
+  }
+  if (note === litNote) return;
+  litNote?.classList.remove('on');
+  note?.classList.add('on');
+  litNote = note;
+}
+
 // One loop keeps the transport and the lit bar in step with the music.
 (function frame() {
   if (player.playing) {
     updateTransport();
-    highlighter?.show(litBar());
+    const bar = litBar();
+    highlighter?.show(bar);
+    lightNote(bar, player.position);
   }
   requestAnimationFrame(frame);
 })();
@@ -309,7 +384,7 @@ async function playSheet(at) {
   updateTransport();
 }
 
-player.onend = () => { updateTransport(); highlighter?.clear(); };
+player.onend = () => { updateTransport(); highlighter?.clear(); lightNote(-1); };
 
 // ---- page ----------------------------------------------------------------------
 
@@ -385,7 +460,6 @@ function busy(on) {
 async function run() {
   if (job || !clip) return;
   setError('');
-  const {space} = await chrome.storage.local.get('space');
   const token = await spaceToken();
   const controller = new AbortController();
   const started = Date.now();
@@ -398,7 +472,7 @@ async function run() {
   try {
     const options = {melody: false, piano: false};
     const result = await transcribe({
-      space: space || DEFAULT_SPACE,
+      space: DEFAULT_SPACE,
       token,
       blob: clip.audio,
       filename: `${safeName(clip.title)}.mp3`,
@@ -416,7 +490,7 @@ async function run() {
   } catch (err) {
     if (err.name !== 'AbortError') {
       setError(err instanceof TypeError
-        ? `Could not reach the Space (${err.message}). Check your connection and the Space name in the extension settings.`
+        ? `Could not reach SheetSage2 (${err.message}). Check your connection and try again.`
         : err.message);
     }
   } finally {
@@ -429,6 +503,13 @@ async function run() {
 
 async function init() {
   const id = params.get('id');
+  if (inPanel && !id) {
+    // In the panel, Captures is a page of its own: the list.
+    document.body.classList.add('list-view');
+    document.title = 'Captures · YouTube to Score';
+    await renderList();
+    return;
+  }
   clip = id ? await getClip(id) : null;
   if (!clip && !id) {
     const [latest] = await listClips();
@@ -467,12 +548,11 @@ $('settings-toggle').addEventListener('click', () => {
   const open = $('sheet-settings').classList.toggle('open');
   $('settings-toggle').setAttribute('aria-expanded', String(open));
 });
-$('panel-captures').addEventListener('click', () => $('sidebar-toggle').click());
 
-// The captures sidebar: a drawer on narrow windows and in the panel, a column
-// that can be closed (and remembered closed) on the full page.
+// The captures sidebar on the full page: a drawer on narrow windows, else a
+// column that can be closed (and remembered closed). The panel lists them on a page of their own.
 const shell = document.querySelector('.shell');
-const drawer = () => inPanel || matchMedia('(max-width: 1000px)').matches;
+const drawer = () => matchMedia('(max-width: 1000px)').matches;
 const setDrawer = (open) => {
   $('sidebar').classList.toggle('open', open);
   $('sidebar-toggle').setAttribute('aria-expanded', String(open));
@@ -487,9 +567,8 @@ $('sidebar-toggle').addEventListener('click', () => {
   else setDrawer(!$('sidebar').classList.contains('open'));
 });
 $('sidebar-close').addEventListener('click', () => (drawer() ? setDrawer(false) : setCollapsed(true)));
-$('sidebar-close').textContent = inPanel ? '✕' : '«';
 addEventListener('click', (e) => {
-  if ($('sidebar').classList.contains('open') && !$('sidebar').contains(e.target) && !e.target.closest('#sidebar-toggle, #panel-captures')) setDrawer(false);
+  if ($('sidebar').classList.contains('open') && !$('sidebar').contains(e.target) && !e.target.closest('#sidebar-toggle')) setDrawer(false);
 });
 // Chrome's side panel ignores window.close(); it has its own close call.
 $('close-panel').addEventListener('click', async () => {
@@ -500,10 +579,30 @@ $('close-panel').addEventListener('click', async () => {
 // ---- playing along with the video ----------------------------------------------
 
 let sync = null; // {tabId, speed}
+// What plays along: 'piano' (the video muted), 'both', or 'song' (the sheet silent). Remembered.
+let sound = 'both';
+chrome.storage.local.get('videoSound').then(({videoSound}) => { if (videoSound) sound = videoSound; showSound(); });
 
 function syncNote(text) {
   $('sync-note').textContent = text || '';
-  $('sync-note').classList.toggle('hidden', !text);
+  $('sync-bar').classList.toggle('hidden', !text && !sync);
+}
+
+const pianoVolume = () => (sync && sound === 'song' ? 0 : Number($('volume').value));
+
+function showSound() {
+  $('sound-choice').classList.toggle('hidden', !sync);
+  for (const button of document.querySelectorAll('[data-sound]')) button.setAttribute('aria-checked', String(button.dataset.sound === sound));
+}
+
+for (const button of document.querySelectorAll('[data-sound]')) {
+  button.addEventListener('click', () => {
+    sound = button.dataset.sound;
+    chrome.storage.local.set({videoSound: sound}).catch(() => {});
+    showSound();
+    player.setVolume(pianoVolume());
+    videoControl({muted: sound === 'piano'});
+  });
 }
 
 /** When each bar sounds in the recording, from SheetSage2's downbeats. */
@@ -565,9 +664,11 @@ async function startSync() {
     await player.load(perform(drawn.arranged, speed, times));
     sync = {tabId: tab.id, speed};
     $('with-video').setAttribute('aria-pressed', 'true');
-    syncNote('Playing with the video, which is muted. Pause, seek or skip in either place; press With video again to stop.');
+    player.setVolume(pianoVolume());
+    showSound();
+    syncNote('Playing with the video. Pause, seek or skip in either place; press With video again to stop.');
     highlighter?.resume();
-    const res = await chrome.tabs.sendMessage(tab.id, {type: 'sync-start', at: clip.start + player.position * speed, rate: speed});
+    const res = await chrome.tabs.sendMessage(tab.id, {type: 'sync-start', at: clip.start + player.position * speed, rate: speed, muted: sound === 'piano'});
     if (res?.error) throw new Error(res.error);
   } catch (err) {
     await stopSync();
@@ -582,7 +683,9 @@ async function stopSync({pause = true} = {}) {
   sync = null;
   $('with-video').setAttribute('aria-pressed', 'false');
   syncNote('');
+  showSound();
   player.pause();
+  player.setVolume(pianoVolume());
   if (was) chrome.tabs.sendMessage(was.tabId, {type: 'sync-stop', pause}).catch(() => {});
   if (drawn) await player.load(perform(drawn.arranged, sheet.speed));
   updateTransport();
@@ -607,7 +710,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     player.play(at);
   }
   updateTransport();
-  highlighter?.show(at >= 0 ? barAt(player.piece.bars, at) : -1);
+  const bar = at >= 0 ? barAt(player.piece.bars, at) : -1;
+  highlighter?.show(bar);
+  lightNote(bar, at);
 });
 
 // Leaving the page gives the video its sound back.
@@ -622,6 +727,15 @@ for (const [id, field] of [['sheet-title', 'title'], ['sheet-artist', 'artist']]
     heading();
     saveSoon();
     drawSoon();
+  });
+}
+for (const button of document.querySelectorAll('[data-notation]')) {
+  button.addEventListener('click', () => {
+    if (!sheet || sheet.notation === button.dataset.notation) return;
+    sheet.notation = button.dataset.notation;
+    chrome.storage.local.set({notation: sheet.notation}).catch(() => {});
+    saveSoon();
+    drawSheet();
   });
 }
 for (const button of document.querySelectorAll('[data-layout]')) {
@@ -672,7 +786,7 @@ $('speed').addEventListener('change', async () => {
   if (drawn) await player.load(perform(drawn.arranged, sheet.speed));
   updateTransport();
 });
-$('volume').addEventListener('input', () => player.setVolume(Number($('volume').value)));
+$('volume').addEventListener('input', () => player.setVolume(pianoVolume()));
 
 // Clicking a bar plays the sheet from it.
 $('sheet').addEventListener('click', (e) => {
@@ -702,11 +816,11 @@ const print = () => {
   if (inPanel && clip) chrome.tabs.create({url: `clip.html?${new URLSearchParams({id: clip.id, print: '1'})}`});
   else window.print();
 };
-$('open-tab').addEventListener('click', () => clip && chrome.tabs.create({url: `clip.html?id=${clip.id}`}));
+$('open-tab').addEventListener('click', () => chrome.tabs.create({url: clip ? `clip.html?id=${clip.id}` : 'clip.html'}));
 $('sheet-print').addEventListener('click', print);
 // Download PDF: the pages at print resolution, straight to a file (no print dialog).
 $('download-pdf').addEventListener('click', async () => {
-  if (!drawn) return;
+  if (!drawn?.svgs) return;
   const button = $('download-pdf');
   const label = button.textContent;
   button.textContent = 'Making the PDF…';
@@ -737,7 +851,11 @@ addEventListener('click', (e) => {
 let titleBeforePrint = '';
 addEventListener('beforeprint', () => {
   if (!drawn) return;
-  $('print-root').replaceChildren(...drawn.svgs.map((svg, i) => {
+  if (drawn.letters) {
+    const copy = $('sheet').querySelector('.letters')?.cloneNode(true);
+    copy?.querySelectorAll('.now, .on').forEach((n) => n.classList.remove('now', 'on'));
+    $('print-root').replaceChildren(...(copy ? [copy] : []));
+  } else $('print-root').replaceChildren(...drawn.svgs.map((svg, i) => {
     const page = document.createElement('div');
     page.className = 'print-page';
     page.innerHTML = svg;

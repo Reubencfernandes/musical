@@ -104,9 +104,9 @@ Requirements, sign-in, the library layout, development notes and troubleshooting
 
 ## Chrome extension: YouTube to Score
 
-Record part of a YouTube video and get it back as sheet music: SheetSage2 writes the melody and
-chords, and the extension engraves them as a piano score or a lead sheet that plays along with the
-recording.
+Record part of a YouTube video and get it back as sheet music, or as letter notes (C D E…) for
+people who don't read the staff: SheetSage2 writes the melody and chords, and the extension sets them
+out as a piano score, a lead sheet or letters that play along with the video.
 
 <p align="center">
   <img src="docs/images/extension-panel.png" width="300" alt="The extension's side panel on a YouTube video: a dotted timeline with the chosen part, start and end times, a chapter picker and the Record button">
@@ -115,35 +115,30 @@ recording.
 </p>
 <p align="center"><sub>Left: choosing the part to record. Right: the capture page with the engraved score (example transcription).</sub></p>
 
-### Install
+### Download and install
 
-The extension is not on the Chrome Web Store; you load it into Chrome yourself. It needs Chrome 116
-or newer (other Chromium browsers such as Edge work too).
+The extension is not on the Chrome Web Store yet, so you add it to Chrome yourself. It takes about
+a minute. You need Chrome 116 or newer; Edge, Brave and other Chromium browsers work the same way.
 
-1. **Get the files**, either way:
-   - Download **`kiku-youtube-to-score.zip`** from the
-     [`extension-latest` release](https://github.com/Reubencfernandes/musical/releases/tag/extension-latest)
-     and unzip it. (GitHub Actions rebuilds it from `main` whenever the extension changes.)
-   - Or download this repository (**Code → Download ZIP**, or `git clone https://github.com/Reubencfernandes/musical.git`)
-     and use the folder `outputs/youtube-to-score-extension`.
-2. Open `chrome://extensions` and switch on **Developer mode** (top right).
-3. Click **Load unpacked** and choose the unzipped folder (the one with `manifest.json` in it).
-4. Click the puzzle-piece icon in the toolbar and pin **YouTube to Score**.
+1. **Download** [**`kiku-youtube-to-score.zip`**](https://github.com/Reubencfernandes/musical/releases/download/extension-latest/kiku-youtube-to-score.zip)
+   from the [`extension-latest` release](https://github.com/Reubencfernandes/musical/releases/tag/extension-latest).
+   GitHub Actions rebuilds it from `main` whenever the extension changes.
+2. **Unzip it** into a folder you will keep, such as `Documents\YouTube to Score`. Chrome loads the
+   extension from that folder each time it starts, so don't delete it afterwards.
+3. Open **`chrome://extensions`** (type it into the address bar) and switch on **Developer mode**
+   (top right).
+4. Click **Load unpacked** and choose the unzipped folder: the one with `manifest.json` directly in it.
+5. Click the puzzle-piece icon in the toolbar and **pin YouTube to Score**, so its button stays in view.
+6. Click the button and **Sign in with Hugging Face** (a free account works). Transcriptions then run
+   on your own ZeroGPU allowance; signed out, they share an anonymous one that runs out after a few
+   clips.
 
-To update, replace the folder with the new files and click the reload arrow on the extension's
-card in `chrome://extensions`.
+**Updating:** download the new ZIP, unzip it over the same folder, then press the reload arrow on
+the extension's card in `chrome://extensions`. Your captures and sign-in are kept.
 
-### Set up (recommended)
-
-Transcription runs on a Hugging Face ZeroGPU Space. Without a token it uses the Space's shared
-anonymous allowance, which runs out after a few clips.
-
-1. Create a **read** token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-2. Click the toolbar button, open **SheetSage settings** at the bottom of the panel, paste the token
-   and press **Save**. It stays in this browser only.
-3. **Space** defaults to `Reubencf/Score-Studio-API`. Any Space with the same
-   `/transcribe(audio, start, duration, melody_only, piano)` endpoint works, such as
-   `Reubencf/Kiku-Engine`; enter it as `owner/name` or a full `https://….hf.space` address.
+**From the source instead:** clone the repository
+(`git clone https://github.com/Reubencfernandes/musical.git`) and load the folder
+`outputs/youtube-to-score-extension` in step 4.
 
 ### Use it
 
@@ -159,15 +154,22 @@ anonymous allowance, which runs out after a few clips.
    SheetSage2. It usually takes under a minute (longer when the Space has to wake up). The result is
    saved with the capture, so it outlives the Space's 24-hour file cache.
 5. **Read, play and download.**
-   - **Layout**: **Piano** (melody in the right hand over a left hand built from the chords) or
-     **Lead sheet** (melody with chord symbols). **Key** transposes up to six semitones; title and
-     artist come from the video and can be edited.
-   - **Play** follows the recording bar by bar; click any bar to play from there. **With video**
-     plays the YouTube video muted, in time with the sheet.
+   - **Sheet music or Letters**: the switch above the score. **Letters** writes the tune as note
+     names bar by bar, with the chords above, a line under each note for how long to hold it, and a
+     dot above or below for a higher or lower octave. The extension remembers your choice for new
+     captures.
+   - **Score settings → Layout**: **Piano** (melody in the right hand over a left hand built from the
+     chords) or **Lead sheet** (melody with chord symbols). **Key** transposes up to six semitones;
+     title and artist come from the video and can be edited.
+   - **Play** follows the recording bar by bar, and in letters note by note; click any bar to play
+     from there. **With video** plays the YouTube video in time with the sheet, and **Hear** picks
+     what you listen to: **Piano** (the video muted), **Both**, or **Song** (just the video, with the
+     bars still lighting up).
    - **Download** has the engraved score as PDF and MusicXML (for MuseScore, Finale, Sibelius or
-     Dorico), plus SheetSage2's own MIDI, ABC and PDF. **Print** prints just the pages, and **MP3**
-     saves the recording.
-6. **Find captures again** with **Captures** in the panel. Each can be transcribed again or deleted.
+     Dorico), the letter notes as text, and SheetSage2's own MIDI, ABC and PDF. **Print** prints just
+     the pages (or the letters), and **MP3** saves the recording.
+6. **Find captures again** with **Captures** in the panel's top bar, or open one full size with the
+   arrow beside it. Each can be transcribed again or deleted.
 
 ### Optional: get audio in seconds (Windows, yt-dlp)
 
@@ -180,13 +182,16 @@ the panel shows **Get audio now**. This helper is left out of the release ZIP; s
 
 ### If something goes wrong
 
-- *"The Space turned the request away"*: the anonymous GPU allowance is used up. Add a token (above)
-  or try later.
+- *"The Space turned the request away"*: the GPU allowance is used up. Sign in with Hugging Face
+  (above) or try later.
+- *The button does nothing on a video*: reload the YouTube tab once after installing or updating the
+  extension.
 - *Nothing was recorded*: the video has to play after you press Record. Make sure it starts playing,
   then record again.
 - Only record music you have the right to use; downloading YouTube content may be against YouTube's
   Terms of Service. SheetSage2's weights are CC BY-NC 4.0 (non-commercial).
 
+What the extension stores and sends: [privacy policy](outputs/youtube-to-score-extension/PRIVACY.md).
 More detail, including how each file works: [extension README](outputs/youtube-to-score-extension/README.md).
 
 ## On-device experiment (`flutter_app`)

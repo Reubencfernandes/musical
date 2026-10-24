@@ -1,20 +1,21 @@
 # YouTube to Score (Chrome extension)
 
-Record a stretch of a YouTube video as an MP3, then turn it into sheet music with
+Record a stretch of a YouTube video as an MP3, then turn it into sheet music or letter notes with
 SheetSage2 through the [Score-Studio-API](https://huggingface.co/spaces/Reubencf/Score-Studio-API) Space.
 
 ## Install
 
-Get the files from the [`extension-latest` release](https://github.com/Reubencfernandes/musical/releases/tag/extension-latest)
-(`kiku-youtube-to-score.zip`, rebuilt by GitHub Actions whenever this folder changes on `main`)
-and unzip it, or use this folder from a clone of the repository. Then:
+1. Download [`kiku-youtube-to-score.zip`](https://github.com/Reubencfernandes/musical/releases/download/extension-latest/kiku-youtube-to-score.zip)
+   from the [`extension-latest` release](https://github.com/Reubencfernandes/musical/releases/tag/extension-latest)
+   (rebuilt by GitHub Actions whenever this folder changes on `main`) and unzip it into a folder you
+   will keep. Or use this folder from a clone of the repository.
+2. Open `chrome://extensions` and switch on **Developer mode**.
+3. Click **Load unpacked** and pick the folder that holds `manifest.json`.
+4. Pin **YouTube to Score** to the toolbar.
+5. Click it and **Sign in with Hugging Face**. Transcriptions then run on your own ZeroGPU quota;
+   without it, the Space's anonymous quota runs out after a few clips.
 
-1. Open `chrome://extensions` and switch on **Developer mode**.
-2. Click **Load unpacked** and pick the folder that holds `manifest.json`.
-3. Pin **YouTube to Score** to the toolbar.
-4. Recommended: click **Sign in with Hugging Face** in the panel. Transcriptions then run on your
-   own ZeroGPU quota; without it, the Space's anonymous quota runs out after a few clips. (Pasting
-   an access token under **SheetSage settings** still works instead.)
+To update, unzip the new release over the same folder and press reload on the extension's card.
 
 ## Use
 
@@ -26,7 +27,7 @@ and unzip it, or use this folder from a clone of the repository. Then:
    sends the clip to SheetSage2 right away. Results are saved with the capture, so they outlive
    the Space's 24-hour file cache.
 
-All captures are listed on the capture page (popup → **Captures**).
+All captures are listed under **Captures** in the panel's top bar.
 
 ## Get audio now (optional: yt-dlp on your own PC)
 
@@ -62,9 +63,15 @@ The capture page engraves SheetSage2's result as A4 sheet music with
 - Rhythms are split by the beat and beamed by the beat, with ties and accidentals placed as a
   copyist would. SheetSage2's padded first bar becomes a real pickup, chord names are spelled
   for the key (B♭maj7/D, not A#maj7/C##), and its sections become rehearsal marks.
-- **Key** transposes the whole score by up to six semitones. **Play along** plays the
-  recording and highlights each bar as it sounds (from SheetSage2's downbeats); click a bar to
-  play from there.
+- **Letters** (the switch above the score) writes the tune as note names instead, bar by bar:
+  chord names above, a line under each letter as long as the note is held, and dots above or below
+  for the octaves around the one the tune mostly sits in. It plays and highlights like the score,
+  note by note, prints, and downloads as plain text (`'` higher, `,` lower, `-` hold). New captures
+  open in whichever view was used last.
+- **Key** transposes the whole score by up to six semitones. **Play** plays the sheet and
+  highlights each bar as it sounds (from SheetSage2's downbeats); click a bar to play from there.
+  **With video** plays the YouTube tab in time with the sheet, and **Hear** chooses the sound:
+  the piano alone (video muted), both, or the song alone.
 - **Print / Save PDF** prints just the pages (choose "Save as PDF" as the printer), and
   **MusicXML** opens in MuseScore, Finale, Sibelius or Dorico.
 
@@ -84,6 +91,7 @@ can be edited on the page. SheetSage2's own PDF, PNG pages, MIDI and ABC are sti
 | `sheetsage.js` | Gradio API client: `/gradio_api/upload`, then `/gradio_api/call/transcribe` |
 | `score.js` | Reads SheetSage2's ABC (the native dialect), arranges it and writes MusicXML |
 | `sheet.js` | Engraves MusicXML into pages with Verovio and follows the recording bar by bar |
+| `letters.js` | Letter notes: the arranged tune as note names per bar, on the page and as text |
 | `title.js` | Song title and artist from a YouTube title and channel |
 | `hf-auth.js` | Hugging Face sign-in (OAuth with PKCE through `chrome.identity`); the Kiku AI Space serves its client document and forwards the answer back to the extension |
 | `db.js` | IndexedDB storage for captures and results |
@@ -92,8 +100,25 @@ It records what the tab plays (`chrome.tabCapture`) instead of downloading YouTu
 it needs no stream deciphering and won't break when YouTube changes its player internals. The
 trade-off is that recording takes as long as the excerpt.
 
-Any Space with the same `/transcribe(audio, start, duration, melody_only, piano)` endpoint
-works. Set it as `owner/name` or a full `https://….hf.space` URL in settings.
+The Space is `DEFAULT_SPACE` in `sheetsage.js`. Any Space with the same
+`/transcribe(audio, start, duration, melody_only, piano)` endpoint works there, as `owner/name` or
+a full `https://….hf.space` URL.
+
+## Extension guidelines
+
+- Manifest V3 with a service worker; all code, fonts, sounds and the Verovio WebAssembly ship in
+  the package (no remotely hosted code). The pages' CSP adds only `wasm-unsafe-eval`, for Verovio.
+- Permissions, and why: `tabCapture` and `offscreen` record the tab, `sidePanel` shows the panel,
+  `scripting` adds the page script to YouTube tabs opened before install, `storage` keeps settings
+  and the sign-in, `identity` runs the Hugging Face sign-in, and `nativeMessaging` talks to the
+  optional yt-dlp helper. Hosts: YouTube (read the player), `huggingface.co` (sign-in) and
+  `*.hf.space` (transcription).
+- What is stored and sent is in [PRIVACY.md](PRIVACY.md); the Web Store asks for that page's link.
+- The GitHub workflow checks the manifest (store name and description limits, every icon size,
+  every file the pages and scripts load, no remote scripts) before packaging.
+- Before any Chrome Web Store submission: the store does not accept extensions that download from
+  YouTube, so a store build should leave out `native/` and `nativeMessaging`, and the MP3 download
+  may need to go too. The name should not suggest it is made by YouTube.
 
 ## Notes
 

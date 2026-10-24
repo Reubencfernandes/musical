@@ -67,6 +67,34 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .text-button:hover { color: var(--ink); }
 .text-button.danger:hover { color: var(--danger); }
 
+/* The navbar along the top of the side panel: the mark, the two places
+   (recording a part, the captures), and the window's own actions. */
+:root { --topbar-h: 52px; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px; height: var(--topbar-h); padding: 0 8px 0 14px;
+  background: color-mix(in srgb, var(--paper) 86%, transparent); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-brand { display: flex; align-items: center; gap: 9px; min-width: 0; font-family: var(--display); font-size: 14px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+.topbar-brand img { flex: none; border-radius: 6px; }
+.topbar-brand span { overflow: hidden; text-overflow: ellipsis; }
+.topbar-tabs { display: flex; gap: 2px; margin-left: auto; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.topbar-tab {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px;
+  color: var(--muted); font-size: 12.5px; text-decoration: none; white-space: nowrap; transition: color .15s, background .15s;
+}
+.topbar-tab:hover { color: var(--ink); }
+.topbar-tab[aria-current=page] { background: var(--accent); color: #fff; box-shadow: inset 0 1px 1px #ffffff45; }
+.tab-count:empty { display: none; }
+.tab-count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: #0003; font-size: 10.5px; line-height: 17px; text-align: center; font-variant-numeric: tabular-nums; }
+.topbar-tab:not([aria-current=page]) .tab-count { background: var(--line); color: var(--ink); }
+.topbar-actions { display: flex; align-items: center; gap: 2px; }
+.icon-button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--muted); }
+.icon-button:hover { background: var(--surface); color: var(--ink); }
+/* A narrow panel keeps just the mark. */
+@media (max-width: 440px) { .topbar-brand span { display: none; } }
+
 /* Inputs */
 .input, input[type=text], input[type=password], select {
   width: 100%; min-height: 40px; padding: 0 13px; border-radius: 12px;

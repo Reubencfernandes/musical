@@ -22,12 +22,24 @@ jobs:
         working-directory: outputs/youtube-to-score-extension
         run: |
           python3 - <<'EOF'
-          import json, os
+          import glob, json, os, re
           m = json.load(open('manifest.json'))
           assert m['manifest_version'] == 3
+          # Chrome Web Store limits: a name up to 75 characters, a description up to 132.
+          assert len(m['name']) <= 75 and len(m['description']) <= 132, 'name or description too long'
+          assert re.fullmatch(r'\d+(\.\d+){0,3}', m['version']), m['version']
+          assert set(m['icons']) >= {'16', '32', '48', '128'}, 'icons missing a size'
           files = [m['background']['service_worker'], m['side_panel']['default_path'], *m['icons'].values()]
           files += [f for s in m['content_scripts'] for f in s['js']]
-          missing = [f for f in files if not os.path.exists(f)]
+          # Every page, script and stylesheet an extension page loads ships with it:
+          # Manifest V3 allows no remotely hosted code.
+          for page in glob.glob('*.html'):
+              text = open(page, encoding='utf-8').read()
+              assert not re.search(r'<script[^>]+src="https?:', text), f'{page} loads a remote script'
+              files += re.findall(r'(?:src|href)="([^":?#]+\.(?:js|css|html|png))', text)
+          for script in glob.glob('*.js'):
+              files += [os.path.normpath(f) for f in re.findall(r"from '\./([^']+)'", open(script, encoding='utf-8').read())]
+          missing = sorted({f for f in files if not os.path.exists(f)})
           assert not missing, missing
           print('YouTube to Score', m['version'])
           EOF

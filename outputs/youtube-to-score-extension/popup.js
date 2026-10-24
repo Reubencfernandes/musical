@@ -1,7 +1,6 @@
 import {clock, parseClock} from './time.js';
-import {DEFAULT_SPACE} from './sheetsage.js';
 import {animateWave, drawTimeline} from './dots.js';
-import {putClip} from './db.js';
+import {putClip, listClips} from './db.js';
 import {signIn, signOut, getAccount} from './hf-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -296,10 +295,8 @@ async function fetchNow() {
 
 async function init() {
   [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-  const saved = await chrome.storage.local.get(['space', 'token']);
-  $('space').value = saved.space || DEFAULT_SPACE;
-  $('token').value = saved.token || '';
   renderAccount();
+  listClips().then((clips) => { $('captures-count').textContent = clips.length ? String(clips.length) : ''; }).catch(() => {});
 
   const {capture} = await chrome.storage.session.get('capture');
   await renderState(capture);
@@ -354,7 +351,6 @@ $('cancel').addEventListener('click', () => {
 });
 $('fetch').addEventListener('click', fetchNow);
 $('dismiss').addEventListener('click', () => chrome.runtime.sendMessage({target: 'background', type: 'dismiss'}));
-$('open-captures').addEventListener('click', () => { location.href = 'clip.html?panel=1'; });
 // Chrome's side panel ignores window.close(); it has its own close call.
 $('close-panel').addEventListener('click', async () => {
   const win = await chrome.windows.getCurrent();
@@ -393,11 +389,5 @@ $('sign-in').addEventListener('click', async () => {
   }
 });
 $('sign-out').addEventListener('click', async () => { await signOut(); renderAccount(); });
-
-$('save-settings').addEventListener('click', async () => {
-  await chrome.storage.local.set({space: $('space').value.trim() || DEFAULT_SPACE, token: $('token').value.trim()});
-  $('saved').classList.remove('hidden');
-  setTimeout(() => $('saved').classList.add('hidden'), 1500);
-});
 
 init();

@@ -112,8 +112,9 @@
   }
 
   // ---- playing the engraved score along with the video ----
-  // The video plays muted while the extension plays the sheet; it reports where
-  // it is so the sheet can follow it bar by bar.
+  // The video plays (muted, unless the reader wants to hear the song too) while
+  // the extension plays the sheet; it reports where it is so the sheet can
+  // follow it bar by bar.
   let sync = null;
   const reportSync = () => {
     const v = video();
@@ -143,14 +144,15 @@
       case 'sync-start':
         if (!v) return reply({error: 'No video found on this page.'});
         stopSync();
-        sync = {wasMuted: v.muted, timer: setInterval(reportSync, 150)};
-        v.muted = true;
+        sync = {wasMuted: v.muted, muted: msg.muted !== false, timer: setInterval(reportSync, 150)};
+        v.muted = sync.muted;
         if (msg.rate) v.playbackRate = msg.rate;
         seek(v, msg.at).then(() => v.play().catch(() => {})).then(() => reply({ok: true}));
         return true;
       case 'sync-control':
         if (!v || !sync) return reply({error: 'Not playing along.'});
-        v.muted = true;
+        if (typeof msg.muted === 'boolean') sync.muted = msg.muted;
+        v.muted = sync.muted;
         if (msg.rate) v.playbackRate = msg.rate;
         if (msg.action === 'pause') v.pause();
         if (msg.action === 'seek') v.currentTime = msg.at;

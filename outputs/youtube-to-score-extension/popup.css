@@ -1,11 +1,8 @@
 /* Fills the side panel, whatever width it is dragged to. */
-body { min-width: 320px; max-width: 560px; margin: 0 auto; padding: 16px 18px 14px; }
+body { min-width: 320px; max-width: 560px; margin: 0 auto; padding: 0 18px 14px; }
 body > * + * { margin-top: 14px; }
-
-.brand { display: flex; align-items: center; gap: 9px; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
-.brand img { border-radius: 5px; }
-.brand .text-button { margin-left: auto; letter-spacing: 0; text-transform: none; }
-.brand .close-panel { margin-left: 0; font-size: 14px; }
+.topbar { margin: 0 -18px; }
+body > .topbar + * { margin-top: 18px; }
 
 h1 { font-size: 22px; }
 form, section { display: grid; gap: 12px; }
@@ -56,8 +53,3 @@ form, section { display: grid; gap: 12px; }
 .account-name { display: grid; flex: 1; min-width: 0; font-size: 13px; }
 .account-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-in .text-button { margin-left: auto; }
-
-details { border-top: 1px solid var(--line); padding-top: 12px; }
-summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-details[open] { display: grid; gap: 8px; }
-details .row { display: flex; align-items: center; gap: 10px; }

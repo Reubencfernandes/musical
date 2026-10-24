@@ -133,8 +133,9 @@ export const barAt = (bars, time) => bars.findIndex((b) => time >= b.start && ti
  * view, or when `resume` is called (play, seek, a click on a bar).
  */
 export class Highlighter {
-  constructor(container, {topInset = 96} = {}) {
-    this.measures = [...container.querySelectorAll('svg g.measure')];
+  constructor(container, {topInset = 96, selector = 'svg g.measure'} = {}) {
+    this.selector = selector;
+    this.measures = [...container.querySelectorAll(selector)];
     this.topInset = topInset;
     this.current = -1;
     this.mark = null;
@@ -154,23 +155,32 @@ export class Highlighter {
 
   /** The bar index under a click, or -1. */
   indexOf(target) {
-    return this.measures.indexOf(target.closest?.('g.measure'));
+    return this.measures.indexOf(target.closest?.(this.selector));
   }
 
   show(index) {
     const changed = index !== this.current;
     if (changed) {
       this.current = index;
-      this.mark?.remove();
+      this.unmark?.();
       this.mark = null;
-      if (index >= 0 && this.measures[index]) {
-        const g = this.measures[index];
+      this.unmark = null;
+      const bar = index >= 0 ? this.measures[index] : null;
+      if (bar && !(bar instanceof SVGElement)) {
+        // An HTML bar (the letter notes) lights itself up.
+        bar.classList.add('now');
+        this.mark = bar;
+        this.unmark = () => bar.classList.remove('now');
+      } else if (bar) {
+        const g = bar;
         const box = g.getBBox();
         const pad = 60;
         this.mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         Object.entries({x: box.x - pad / 2, y: box.y - pad, width: box.width + pad, height: box.height + 2 * pad, rx: 40, class: 'now'})
           .forEach(([k, v]) => this.mark.setAttribute(k, v));
         g.insertBefore(this.mark, g.firstChild);
+        const rect = this.mark;
+        this.unmark = () => rect.remove();
       }
     }
     if (!this.mark || !this.follow) return;

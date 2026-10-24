@@ -99,7 +99,7 @@ export async function getAccount() {
 
 /**
  * The token to call Spaces with: the signed-in account's, renewed quietly once it
- * expires, or else the access token pasted in settings, or none (anonymous quota).
+ * expires, or none (the anonymous quota).
  */
 export async function spaceToken() {
   const account = await getAccount();
@@ -107,6 +107,5 @@ export async function spaceToken() {
   if (account) {
     try { return (await signIn({interactive: false})).token; } catch {}
   }
-  const {token} = await chrome.storage.local.get('token');
-  return token || '';
+  return '';
 }

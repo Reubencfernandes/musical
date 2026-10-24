@@ -12,6 +12,9 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({windowId: tab.windowId}).catch(() => {});
   chrome.storage.session.set({invoked: {tabId: tab.id, at: Date.now()}});
 });
+// Before Hugging Face sign-in the panel had a Space name and a pasted token; signing in replaced both.
+chrome.runtime.onInstalled.addListener(() => chrome.storage.local.remove(['space', 'token']).catch(() => {}));
+
 const IDLE = {status: 'idle'};
 
 let state;

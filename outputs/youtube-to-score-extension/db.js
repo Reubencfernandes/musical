@@ -34,6 +34,9 @@ export const deleteClip = (id) => run('readwrite', (store) => store.delete(id));
 export async function listClips() {
   const clips = await run('readonly', (store) => store.getAll());
   return clips
-    .map(({id, title, start, seconds, created, result}) => ({id, title, start, seconds, created, scored: !!result}))
+    .map(({id, title, channel, url, start, seconds, created, result, sheet}) => ({
+      id, title, channel, url, start, seconds, created, scored: !!result,
+      sheet: sheet && {title: sheet.title, artist: sheet.artist},
+    }))
     .sort((a, b) => b.created - a.created);
 }
