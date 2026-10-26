@@ -93,8 +93,9 @@ def main():
 
     api.upload_folder(repo_id=REPO, repo_type="space", folder_path=str(FOLDER),
                       ignore_patterns=IGNORE, commit_message="Deploy Kiku AI",
-                      # Samples removed locally are removed from the Space too.
-                      delete_patterns=["public/soundfonts/**"])
+                      # Anything removed locally is removed from the Space too, so a
+                      # deleted page cannot linger there and break the build.
+                      delete_patterns=["*"])
     print("Uploaded %s" % FOLDER.name)
     print("\n%s" % ORIGIN)
     print("https://huggingface.co/spaces/%s" % REPO)
