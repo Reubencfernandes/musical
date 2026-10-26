@@ -36,6 +36,12 @@ form, section { display: grid; gap: 12px; }
 .options { display: grid; gap: 8px; }
 .note { line-height: 1.5; }
 
+/* Any website */
+.site-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.site-icon { flex: none; border-radius: 4px; }
+.site-text { display: grid; min-width: 0; }
+.site-text .video-title { color: var(--ink); }
+
 /* Recording */
 #recording { justify-items: start; }
 .wave { height: 72px; }
@@ -53,3 +59,14 @@ form, section { display: grid; gap: 12px; }
 .account-name { display: grid; flex: 1; min-width: 0; font-size: 13px; }
 .account-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-in .text-button { margin-left: auto; }
+
+/* Loading stand-ins, shaped like what they stand in for. */
+.sk-heading { height: 26px; width: 72%; border-radius: 6px; }
+.sk-line { height: 12px; width: 100%; }
+.sk-line.short { width: 46%; }
+.sk-timeline { height: 44px; margin: 2px 0; border-radius: 12px; }
+.sk-input { height: 40px; margin-top: 24px; border-radius: 12px; }
+.sk-button { height: 46px; border-radius: 999px; }
+.sk-avatar { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+.methods-loading { display: grid; gap: 12px; }
+#account-loading .account-name { gap: 7px; padding: 2px 0; }

@@ -1,13 +1,14 @@
 # YouTube to Score: privacy policy
 
-_Last updated 24 October 2026_
+_Last updated 26 October 2026_
 
-YouTube to Score is a Chrome extension that records part of a YouTube video you choose and
-turns it into sheet music. This page says what it handles and where that goes.
+YouTube to Score is a Chrome extension that records part of a YouTube video you choose, or what
+plays in another tab you choose, and turns it into sheet music. This page says what it handles and where that goes.
 
 ## What stays in your browser
 
-- **Your captures**: the recorded audio, the title and address of the video, and the sheet music
+- **Your captures**: the recorded audio, the title and address of the video or page (and, for other
+  sites, the address of the page's icon), and the sheet music
   made from it. They are kept in the extension's own storage (IndexedDB) on your computer until you
   delete them.
 - **Your settings**: the score layout, letters or sheet music, the play-along sound, and the part you
@@ -29,13 +30,17 @@ turns it into sheet music. This page says what it handles and where that goes.
 - **Playing along with a video** controls the YouTube tab you already have open (play, pause, seek,
   mute). Nothing is sent to YouTube beyond what the player itself does.
 - **The captures list shows each video's thumbnail**, loaded from YouTube's image server
-  (`i.ytimg.com`) by the video's ID, with no referrer.
+  (`i.ytimg.com`) by the video's ID, with no referrer. Captures from other sites show that site's icon,
+  loaded from the address the page gave, with no referrer.
 
 ## What it does not do
 
 - No analytics, tracking, advertising or selling of data.
 - It does not read your browsing history. On YouTube it reads only the open video's title, channel,
-  chapters and playing position.
+  chapters and playing position. On other sites it reads nothing from the page: only the tab's title,
+  address and icon, and only after you click the toolbar button on that tab.
+- It records only the one tab you chose, never other tabs, your microphone or the rest of your
+  computer.
 - It loads no code from the internet. Everything it runs ships inside the extension.
 
 ## The optional yt-dlp helper

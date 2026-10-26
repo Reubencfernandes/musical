@@ -49,7 +49,8 @@ function performers() {
 }
 
 /** A musician animated by dots growing and shrinking on a fixed grid. Returns a stop function. */
-export function animatePerformer(canvas, name = PERFORMERS[Math.floor(Math.random() * PERFORMERS.length)]) {
+// Always the same musician, like the web app's processing screen.
+export function animatePerformer(canvas, name = PERFORMERS[0]) {
   let frame = 0;
   let stopped = false;
   canvas.dataset.performer = name;

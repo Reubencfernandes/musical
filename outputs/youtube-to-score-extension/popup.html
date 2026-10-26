@@ -18,9 +18,36 @@
   </div>
 </nav>
 
+<!-- Stand-ins that shimmer until the video's details arrive. -->
+<section id="loading" class="loading" aria-busy="true" aria-label="Loading the video">
+  <span class="skeleton sk-heading"></span>
+  <span class="skeleton sk-line"></span>
+  <span class="skeleton sk-timeline"></span>
+  <div class="times"><span class="skeleton sk-input"></span><span class="skeleton sk-input"></span></div>
+  <span class="skeleton sk-line short"></span>
+  <span class="skeleton sk-button"></span>
+</section>
+
 <section id="elsewhere" class="hidden">
-  <h1>Open a song on YouTube</h1>
-  <p class="muted">Then click this button again to choose the part to turn into sheet music.</p>
+  <h1>Open a page that plays music</h1>
+  <p class="muted">A YouTube video, or any website with sound. Then click this button again to record it as sheet music.</p>
+</section>
+
+<section id="locked" class="hidden">
+  <h1>Record this tab</h1>
+  <p class="muted">Click the YouTube to Score button in your toolbar while this tab is open. Chrome only lets the extension hear a tab after that click.</p>
+</section>
+
+<!-- Any website: no player to read, so the recording runs from the first sound until Stop. -->
+<section id="anywhere" class="hidden">
+  <h1>Record this tab</h1>
+  <div class="site-row">
+    <img id="site-icon" class="site-icon hidden" alt="" width="20" height="20">
+    <span class="site-text"><span id="site-title" class="video-title"></span><span id="site-host" class="small muted"></span></span>
+  </div>
+  <p id="anywhere-error" class="alert hidden" role="alert"></p>
+  <button id="record-tab" class="pill primary wide" type="button">Record</button>
+  <p class="muted small note">Press Record, then play the music on this page. Silence before the first sound is left out, and it stops when you press Stop, or after 10 minutes. Only this tab is recorded, never other tabs or the rest of your PC.</p>
 </section>
 
 <form id="setup" class="hidden" novalidate>
@@ -58,6 +85,11 @@
   <p id="length" class="length" aria-live="polite"></p>
 
   <p id="setup-error" class="alert hidden" role="alert"></p>
+  <div id="methods-loading" class="methods-loading hidden" aria-hidden="true">
+    <span class="skeleton sk-button"></span>
+    <span class="skeleton sk-line"></span>
+    <span class="skeleton sk-line short"></span>
+  </div>
   <button id="fetch" class="pill primary wide hidden" type="button">Get audio now</button>
   <button id="record" class="pill primary wide" type="submit">Record</button>
   <p id="method-note" class="muted small note">The video plays while it records, so a part takes as long as it lasts. Ads and buffering are left out, and the sheet music opens when it finishes.</p>
@@ -79,8 +111,12 @@
   <button id="dismiss" class="pill" type="button">OK</button>
 </section>
 
-<section id="account" class="account" aria-live="polite">
-  <div id="signed-out" class="account-out">
+<section id="account" class="account" aria-live="polite" aria-busy="true">
+  <div id="account-loading" class="account-in" aria-hidden="true">
+    <span class="skeleton sk-avatar"></span>
+    <span class="account-name"><span class="skeleton sk-line short"></span><span class="skeleton sk-line"></span></span>
+  </div>
+  <div id="signed-out" class="account-out hidden">
     <button id="sign-in" class="pill hf-sign-in" type="button"><span aria-hidden="true">🤗</span>Sign in with Hugging Face</button>
     <p id="account-note" class="small muted">Transcriptions then run on your own ZeroGPU quota instead of the shared anonymous one, which runs out after a few clips.</p>
   </div>

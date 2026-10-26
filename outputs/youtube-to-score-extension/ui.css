@@ -125,3 +125,12 @@ input[type=range] { accent-color: var(--accent); }
 
 /* Dot-grid canvases (waveforms, timelines, performers) take the accent from CSS. */
 canvas.dots { display: block; width: 100%; }
+
+/* Skeletons: grey shapes that shimmer where content is still loading. */
+.skeleton {
+  display: block; border-radius: 8px;
+  background: linear-gradient(90deg, var(--surface) 30%, color-mix(in srgb, var(--ink) 10%, var(--surface)) 50%, var(--surface) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

@@ -5,7 +5,7 @@ import {signIn, signOut, getAccount} from './hf-auth.js';
 
 const $ = (id) => document.getElementById(id);
 const WATCH = /^https:\/\/(www|music)\.youtube\.com\/watch\?/;
-const views = ['elsewhere', 'setup', 'recording', 'failed'];
+const views = ['loading', 'elsewhere', 'locked', 'anywhere', 'setup', 'recording', 'failed'];
 // SheetSage2 reads 5 seconds to 10 minutes of audio.
 const SHORTEST = 5;
 const LONGEST = 600;
@@ -19,9 +19,11 @@ let live = 0;
 let stopWave = null;
 
 let shown = '';
-// The yt-dlp helper on this PC (native/), when it is installed: its yt-dlp version.
+// The yt-dlp helper on this PC (native/), when it is installed: its yt-dlp version,
+// '' when it is not, and undefined until the first probe answers.
 const HOST = 'com.kiku.youtube_to_score';
-let helper = null;
+let helper;
+let settingUp = null;
 let fetching = null;
 let waitingForClick = 0;
 function show(view) {
@@ -43,8 +45,63 @@ async function ask(msg) {
 }
 
 function setupError(text) {
-  $('setup-error').textContent = text || '';
-  $('setup-error').classList.toggle('hidden', !text);
+  const box = $(shown === 'anywhere' ? 'anywhere-error' : 'setup-error');
+  box.textContent = text || '';
+  box.classList.toggle('hidden', !text);
+}
+
+/** Explains why a capture could not start; a missing icon click records once the click comes. */
+function captureError(err) {
+  if (/not been invoked|activeTab/i.test(err.message)) {
+    waitingForClick = Date.now();
+    setupError('Chrome needs one click on the YouTube to Score icon in your toolbar, on this tab, before it can record it. Click the icon and recording starts.');
+  } else {
+    setupError(/active stream/i.test(err.message)
+      ? 'This tab is already being captured. Stop the other capture first.'
+      : err.message);
+  }
+}
+
+const site = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
+
+/** A page that is not a YouTube video: record whatever it plays. */
+async function showTab() {
+  if (!tab?.url) {
+    // Chrome hides a page's address until the icon is clicked there; after a click it is a page no extension may record.
+    const {invoked} = await chrome.storage.session.get('invoked').catch(() => ({}));
+    return show(invoked?.tabId === tab?.id ? 'elsewhere' : 'locked');
+  }
+  if (!/^https?:/.test(tab.url) || /^https:\/\/chromewebstore\.google\.com\//.test(tab.url)) return show('elsewhere');
+  show('anywhere');
+  showSite();
+}
+
+function showSite() {
+  $('site-title').textContent = tab.title || site(tab.url);
+  $('site-host').textContent = site(tab.url);
+  $('site-icon').classList.toggle('hidden', !tab.favIconUrl);
+  if (tab.favIconUrl) $('site-icon').src = tab.favIconUrl;
+}
+
+async function recordTab() {
+  setupError('');
+  $('record-tab').disabled = true;
+  try {
+    // The page may have moved on to another song since the panel opened.
+    tab = await chrome.tabs.get(tab.id).catch(() => tab);
+    const streamId = await chrome.tabCapture.getMediaStreamId({targetTabId: tab.id});
+    const res = await chrome.runtime.sendMessage({
+      target: 'background', type: 'start', free: true,
+      tabId: tab.id, streamId, start: 0, seconds: LONGEST, title: tab.title || site(tab.url), channel: '', url: tab.url,
+      icon: tab.favIconUrl?.startsWith('http') ? tab.favIconUrl : '',
+      options: {transcribe: true, melody: false, piano: false},
+    });
+    if (res?.error) throw new Error(res.error);
+  } catch (err) {
+    captureError(err);
+  } finally {
+    $('record-tab').disabled = false;
+  }
 }
 
 const draftKey = () => `draft:${info?.videoId || tab?.url}`;
@@ -121,8 +178,14 @@ async function refreshInfo() {
   if (pick && info.duration != null) drawTimeline($('timeline'), {duration: info.duration, start: pick.start, end: pick.end, now: info.time, chapters: info.chapters});
 }
 
-async function showSetup() {
-  show('setup');
+function showSetup() {
+  settingUp ??= setUp().finally(() => { settingUp = null; });
+  return settingUp;
+}
+
+async function setUp() {
+  // The skeleton stays up until the video's details arrive.
+  if (shown !== 'setup') show('loading');
   await refreshInfo();
   if (!info?.ready) {
     show('elsewhere');
@@ -138,17 +201,22 @@ async function showSetup() {
       ...info.chapters.map((c, i) => option(String(i), `${c.title} · ${clock(c.start)}–${clock(c.end ?? info.duration)}`)));
   }
   $('chapter-field').classList.toggle('hidden', !info.chapters?.length);
+  show('setup');
   render();
   showMethods();
   poll = setInterval(refreshInfo, 500);
-  probeHelper().then((version) => { helper = version; showMethods(); });
+  probeHelper().then((version) => {
+    helper = version || '';
+    chrome.storage.session.set({helper}).catch(() => {});
+    showMethods();
+  });
 }
 
 function renderRecording(s) {
   show('recording');
   $('rec-title').textContent = s.title;
-  $('rec-status').textContent = s.ad ? 'Ad playing · paused' : s.live ? 'Recording' : 'Waiting for playback';
-  $('rec-time').textContent = `${clock(s.captured)} / ${clock(s.seconds)}`;
+  $('rec-status').textContent = s.ad ? 'Ad playing · paused' : s.live ? 'Recording' : s.free ? 'Waiting for sound' : 'Waiting for playback';
+  $('rec-time').textContent = s.free ? `${clock(s.captured)} · up to ${clock(s.seconds)}` : `${clock(s.captured)} / ${clock(s.seconds)}`;
   // Peaks arrive four times a second; the wave eases between them every frame.
   live = s.live ? Math.min(1, Math.sqrt(s.peak || 0) * 1.4) : 0;
 }
@@ -166,9 +234,10 @@ async function renderState(capture) {
     $('failed-text').textContent = capture.error;
     return;
   }
-  if ($('setup').classList.contains('hidden') || !info) {
-    if (tab && WATCH.test(tab.url || '')) await showSetup();
-    else show('elsewhere');
+  if (tab && WATCH.test(tab.url || '')) {
+    if (shown !== 'setup' || !info) await showSetup();
+  } else if (!['anywhere', 'locked', 'elsewhere'].includes(shown)) {
+    await showTab();
   }
 }
 
@@ -194,15 +263,7 @@ async function record(event) {
     });
     if (res?.error) throw new Error(res.error);
   } catch (err) {
-    if (/not been invoked|activeTab/i.test(err.message)) {
-      // Chrome needs a click on the icon in this tab first; record as soon as it comes.
-      waitingForClick = Date.now();
-      setupError('Chrome needs one click on the YouTube to Score icon in your toolbar, on this video’s tab, before it can record it. Click the icon and recording starts.');
-    } else {
-      setupError(/active stream/i.test(err.message)
-        ? 'This tab is already being captured. Stop the other capture first.'
-        : err.message);
-    }
+    captureError(err);
   } finally {
     $('record').disabled = false;
   }
@@ -228,8 +289,12 @@ function probeHelper() {
 }
 
 function showMethods() {
+  // Until the helper answers, a stand-in holds the buttons' place, so they don't jump.
+  const probing = helper === undefined;
+  $('methods-loading').classList.toggle('hidden', !probing);
+  for (const id of ['record', 'method-note']) $(id).classList.toggle('hidden', probing);
   const can = !!helper && info?.duration != null;
-  $('fetch').classList.toggle('hidden', !can);
+  $('fetch').classList.toggle('hidden', probing || !can);
   $('record').classList.toggle('primary', !can);
   $('record').textContent = can ? 'Record instead' : 'Record';
   $('method-note').textContent = can
@@ -296,6 +361,8 @@ async function fetchNow() {
 async function init() {
   [tab] = await chrome.tabs.query({active: true, currentWindow: true});
   renderAccount();
+  // The last probe's answer shows at once; a fresh probe confirms it.
+  ({helper} = await chrome.storage.session.get('helper').catch(() => ({})));
   listClips().then((clips) => { $('captures-count').textContent = clips.length ? String(clips.length) : ''; }).catch(() => {});
 
   const {capture} = await chrome.storage.session.get('capture');
@@ -305,10 +372,14 @@ async function init() {
     if (area === 'local' && changes.account) renderAccount();
     // The icon was clicked in this tab after Record asked for it: record now.
     const invoked = area === 'session' && changes.invoked?.newValue;
-    if (invoked && invoked.tabId === tab?.id && waitingForClick && Date.now() - waitingForClick < 120000 && shown === 'setup') {
+    if (invoked?.tabId !== tab?.id) return;
+    // The click also lets the panel see the page's address: show what can be recorded there.
+    if (shown === 'locked') location.reload();
+    if (waitingForClick && Date.now() - waitingForClick < 120000 && (shown === 'setup' || shown === 'anywhere')) {
       waitingForClick = 0;
       setupError('');
-      $('setup').requestSubmit();
+      if (shown === 'anywhere') recordTab();
+      else $('setup').requestSubmit();
     }
   });
 }
@@ -350,6 +421,7 @@ $('cancel').addEventListener('click', () => {
   chrome.runtime.sendMessage({target: 'background', type: 'cancel'});
 });
 $('fetch').addEventListener('click', fetchNow);
+$('record-tab').addEventListener('click', recordTab);
 $('dismiss').addEventListener('click', () => chrome.runtime.sendMessage({target: 'background', type: 'dismiss'}));
 // Chrome's side panel ignores window.close(); it has its own close call.
 $('close-panel').addEventListener('click', async () => {
@@ -360,11 +432,18 @@ $('close-panel').addEventListener('click', async () => {
 // The panel stays open across tabs and videos: start over when the video in view changes.
 const restart = () => { if (shown !== 'recording') location.reload(); };
 chrome.tabs.onActivated.addListener(({windowId}) => { if (windowId === tab?.windowId) restart(); });
-chrome.tabs.onUpdated.addListener((tabId, change) => { if (tabId === tab?.id && change.url) restart(); });
+chrome.tabs.onUpdated.addListener((tabId, change, fresh) => {
+  if (tabId !== tab?.id) return;
+  if (change.url) return restart();
+  // Music sites put the playing song in the title.
+  if (shown === 'anywhere' && (change.title || change.favIconUrl)) { tab = fresh; showSite(); }
+});
 /** Shows who is signed in to Hugging Face, renewing an expired sign-in quietly when it can. */
 async function renderAccount() {
-  let account = await getAccount();
+  let account = await getAccount().catch(() => null);
   if (account?.expired) account = await signIn({interactive: false}).catch(() => null);
+  $('account-loading').classList.add('hidden');
+  $('account').removeAttribute('aria-busy');
   $('signed-out').classList.toggle('hidden', !!account);
   $('signed-in').classList.toggle('hidden', !account);
   if (!account) return;

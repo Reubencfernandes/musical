@@ -49,25 +49,26 @@ function badge(text) {
 
 async function end(fields) {
   const s = await current();
-  if (s.tabId) toTab(s.tabId, {type: 'stop'});
+  if (s.tabId && !s.free) toTab(s.tabId, {type: 'stop'});
   await closeOffscreen();
   badge('');
   return update(fields, true);
 }
 
 const handlers = {
-  async start({tabId, streamId, seconds, start, title, channel, url, options}) {
+  // `free` is any website: no player to cue, so it records from the first sound until Stop.
+  async start({tabId, streamId, seconds, start, title, channel, url, options, free = false, icon = ''}) {
     if ((await current()).status === 'recording') throw new Error('A recording is already running.');
     await ensureOffscreen();
-    const meta = {title, channel: channel || '', url, start, requested: seconds, options};
+    const meta = {title, channel: channel || '', url, start, requested: seconds, options, ...(free && {free, icon})};
     const res = await toOffscreen({type: 'record', streamId, seconds, meta});
     if (res?.error) {
       await closeOffscreen();
       throw new Error(res.error);
     }
-    await update({status: 'recording', tabId, title, start, seconds, options, captured: 0, peak: 0, live: false, ad: false}, true);
+    await update({status: 'recording', tabId, title, start, seconds, options, free, captured: 0, peak: 0, live: false, ad: false}, true);
     badge('REC');
-    await toTab(tabId, {type: 'play'});
+    if (!free) await toTab(tabId, {type: 'play'});
     return {ok: true};
   },
 
@@ -87,8 +88,8 @@ const handlers = {
     return {ok: true};
   },
 
-  async tick({captured, peak}) {
-    if ((await current()).status === 'recording') await update({captured, peak});
+  async tick({captured, peak, live}) {
+    if ((await current()).status === 'recording') await update({captured, peak, ...(typeof live === 'boolean' && {live})});
   },
 
   async gate({live, ad}, sender) {

@@ -105,6 +105,10 @@ function thumbnail(url) {
   }
 }
 
+/** Where a capture's part sits: its range in a YouTube video, or just its length on any other site. */
+const partText = (c) => (c.free ? `${clock(c.seconds)} from ${site(c.url)}` : `${clock(c.start)}–${clock(c.start + c.seconds)}`);
+const site = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'a website'; } };
+
 let clips = [];
 async function renderList() {
   clips = await listClips();
@@ -130,9 +134,10 @@ function showList() {
     a.title = c.title || title;
     if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
     const thumb = span('thumb', '');
-    const src = thumbnail(c.url);
+    const src = c.free ? c.icon : thumbnail(c.url);
     if (src) {
       const img = Object.assign(document.createElement('img'), {src, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer'});
+      if (c.free) img.className = 'site-icon';
       // A removed or private video has no thumbnail: leave the plain tile.
       img.addEventListener('error', () => img.remove());
       thumb.append(img);
@@ -141,7 +146,7 @@ function showList() {
     const text = span('clip-text', '');
     text.append(span('name', title));
     if (artist) text.append(span('artist', artist));
-    const meta = span('meta', `${clock(c.start)}–${clock(c.start + c.seconds)} · ${new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}`);
+    const meta = span('meta', `${partText(c)} · ${new Date(c.created).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}`);
     if (c.scored) meta.append(span('tag', 'Score'));
     text.append(meta);
     a.append(thumb, text);
@@ -154,7 +159,7 @@ function showList() {
     const li = document.createElement('li');
     li.className = 'clips-empty';
     li.textContent = query ? `No capture matches “${$('clip-search').value.trim()}”.`
-      : 'Nothing recorded yet. Open a song on YouTube and record the part you want as sheet music.';
+      : 'Nothing recorded yet. Open a song on YouTube, or any site that plays music, and record it as sheet music.';
     shown.push(li);
   }
   list.replaceChildren(...shown);
@@ -305,7 +310,7 @@ async function drawSheet() {
         return page;
       }));
     }
-    highlighter = new Highlighter(container, {topInset: inPanel ? 124 : 96, selector: letters ? '.letter-bar' : 'svg g.measure'});
+    highlighter = new Highlighter(container, {topInset: inPanel ? 170 : 140, selector: letters ? '.letter-bar' : 'svg g.measure'});
     highlighter.follow = $('follow').checked;
     drawn = {svgs, xml, header, arranged, letters};
     if (sync) await stopSync();
@@ -429,10 +434,13 @@ function render() {
   if (!clip) return;
 
   heading();
-  $('range').textContent = `${clock(clip.start)}–${clock(clip.start + clip.seconds)} of the video`;
+  $('range').textContent = clip.free ? `${clock(clip.seconds)} recorded` : `${clock(clip.start)}–${clock(clip.start + clip.seconds)} of the video`;
   const source = new URL(clip.url);
-  source.searchParams.set('t', `${Math.floor(clip.start)}s`);
+  if (!clip.free) source.searchParams.set('t', `${Math.floor(clip.start)}s`);
   $('source').href = source.href;
+  $('source').textContent = clip.free ? `Open ${site(clip.url)}` : 'Open on YouTube';
+  // Playing along needs YouTube's player to follow; other sites have none to control.
+  $('with-video').classList.toggle('hidden', !!clip.free);
 
   const audio = blobUrl(clip.audio);
   $('download-mp3').href = audio;

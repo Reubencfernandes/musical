@@ -4,6 +4,9 @@ import {putClip} from './db.js';
 
 const KBPS = 192;
 const MIN_SECONDS = 1;
+// Any website (meta.free) has no player to say when the music plays, so the
+// recording starts with the first block louder than this (about -50 dB).
+const SOUND = 0.003;
 let rec = null;
 
 const send = (msg) => chrome.runtime.sendMessage({target: 'background', ...msg}).catch(() => {});
@@ -37,6 +40,7 @@ async function start({streamId, seconds, meta}) {
     encoder: new lamejs.Mp3Encoder(2, ctx.sampleRate, KBPS),
     chunks: [],
     live: false,
+    free: !!meta.free,
     frames: 0,
     target: Math.round(seconds * ctx.sampleRate),
     peak: 0,
@@ -46,7 +50,10 @@ async function start({streamId, seconds, meta}) {
   stream.getAudioTracks()[0].addEventListener('ended', () => finish());
 }
 
+const loud = (samples) => samples.some((s) => Math.abs(s) > SOUND);
+
 function take(left, right) {
+  if (rec?.free && !rec.live && (loud(left) || loud(right))) rec.live = true;
   if (!rec?.live) return;
   const count = Math.min(left.length, rec.target - rec.frames);
   if (count <= 0) return;
@@ -59,7 +66,7 @@ function take(left, right) {
 
 function tick() {
   if (!rec) return;
-  send({type: 'tick', captured: rec.frames / rec.ctx.sampleRate, peak: rec.peak});
+  send({type: 'tick', captured: rec.frames / rec.ctx.sampleRate, peak: rec.peak, ...(rec.free && {live: rec.live})});
   rec.peak = 0;
 }
 
@@ -79,7 +86,9 @@ async function finish() {
   if (!done) return;
   const seconds = done.frames / done.ctx.sampleRate;
   if (seconds < MIN_SECONDS) {
-    send({type: 'failed', error: 'Nothing was recorded. Make sure the video plays after you press Record.'});
+    send({type: 'failed', error: done.free
+      ? 'Nothing was heard. Play the music in the tab after you press Record.'
+      : 'Nothing was recorded. Make sure the video plays after you press Record.'});
     return;
   }
   const tail = done.encoder.flush();
@@ -102,7 +111,7 @@ async function finish() {
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // The YouTube tab broadcasts whether the video is audible right now.
   if (msg.type === 'gate') {
-    if (rec) rec.live = msg.live;
+    if (rec && !rec.free) rec.live = msg.live;
     return;
   }
   if (msg.target !== 'offscreen') return;

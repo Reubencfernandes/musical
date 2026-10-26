@@ -92,8 +92,9 @@ article { display: grid; gap: 22px; align-content: start; min-width: 0; }
 .stepper output { min-width: 108px; text-align: center; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* Transport (Score Studio's player bar): stays in view while the pages scroll. */
+/* The player and, while it follows the video, the Hear switch under it: they stay in view together. */
+.player-dock { position: sticky; top: 10px; z-index: 6; display: grid; gap: 6px; }
 .transport {
-  position: sticky; top: 10px; z-index: 6;
   display: flex; align-items: center; gap: 6px; min-height: 64px; padding: 11px 14px;
   border-radius: 14px; background: var(--transport); color: var(--transport-ink); box-shadow: 0 8px 22px #0003;
 }
@@ -120,7 +121,11 @@ article { display: grid; gap: 22px; align-content: start; min-width: 0; }
 .transport-chip:hover { color: #fff; background: #3f4144; }
 .transport-chip[aria-pressed=true] { background: var(--accent); color: #fff; }
 .transport-chip[aria-busy=true] { opacity: .6; }
-.sync-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; margin: -4px 4px 0; }
+.sync-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap;
+  padding: 6px 6px 6px 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(10px);
+}
 .sync-note { font-size: 12px; color: var(--muted); flex: 1 1 220px; }
 .sync-note:empty { display: none; }
 .sound-choice { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
@@ -142,6 +147,9 @@ article { display: grid; gap: 22px; align-content: start; min-width: 0; }
 .toolbar-group { display: flex; align-items: center; gap: 6px 4px; flex-wrap: wrap; min-width: 0; }
 .toolbar-group > button, .download-menu summary { font-size: 12px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; white-space: nowrap; border-radius: 6px; color: var(--ink); }
 .toolbar-group > button:hover, .download-menu summary:hover { background: var(--surface); }
+.zoom-group { display: inline-flex; align-items: center; }
+.zoom-group button { font-size: 12px; padding: 8px 10px; border-radius: 6px; color: var(--ink); }
+.zoom-group button:hover { background: var(--surface); }
 .toolbar-group output { min-width: 42px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
 .divider { height: 18px; width: 1px; background: var(--line); margin: 0 6px; }
 .follow { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
@@ -213,7 +221,8 @@ body:not(.in-panel) .panel-only { display: none; }
 .back-link:hover { color: var(--ink); }
 /* A narrow toolbar wraps its controls onto a second row; dividers would only dangle there. */
 .in-panel .score-toolbar .divider { display: none; }
-.in-panel .transport { top: calc(var(--topbar-h) + 6px); padding: 8px; gap: 2px; min-height: 0; }
+.in-panel .player-dock { top: calc(var(--topbar-h) + 6px); }
+.in-panel .transport { padding: 8px; gap: 2px; min-height: 0; }
 .in-panel .sheet { padding: 8px; border-radius: 12px; }
 
 /* Captures in the sidebar: the video's thumbnail with the part's length, the song, when. */
@@ -229,6 +238,7 @@ body:not(.in-panel) .panel-only { display: none; }
 .clips a[aria-current=page] { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 .thumb { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--surface); }
 .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb img.site-icon { width: 32px; height: 32px; margin: auto; position: absolute; inset: 0; object-fit: contain; }
 .thumb .length { position: absolute; right: 4px; bottom: 4px; padding: 0 5px; border-radius: 4px; background: #000c; color: #fff; font-size: 10.5px; line-height: 17px; font-variant-numeric: tabular-nums; }
 .clip-text { display: grid; gap: 2px; min-width: 0; }
 .clips .name { font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -296,7 +306,7 @@ body:not(.in-panel) .panel-only { display: none; }
 .legend-sample .ln-dots { position: static; font-size: .7em; }
 .legend-line { display: inline-block; width: 1.8em; height: 2px; border-radius: 2px; background: var(--accent); }
 
-.letter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(190px * var(--zoom)), 1fr)); row-gap: 1.3em; }
+.letter-grid { container-type: inline-size; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(190px * var(--zoom)), 1fr)); row-gap: 1.3em; }
 .letter-section {
   grid-column: 1 / -1; justify-self: start; margin-top: .4em;
   font-size: .72em; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
@@ -308,6 +318,7 @@ body:not(.in-panel) .panel-only { display: none; }
   transition: background .15s;
 }
 .letter-bar.wide { grid-column: span 2; }
+@container (max-width: 400px) { .letter-bar.wide { grid-column: auto; } }
 .letter-bar:hover { background: #0000000a; }
 .letter-bar.now { background: color-mix(in srgb, var(--accent) 16%, #fff); }
 .bar-number { position: absolute; top: -.25em; left: .25em; font-size: .55em; color: var(--soft); font-variant-numeric: tabular-nums; }

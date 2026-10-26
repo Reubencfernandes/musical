@@ -1,6 +1,7 @@
 # YouTube to Score (Chrome extension)
 
-Record a stretch of a YouTube video as an MP3, then turn it into sheet music or letter notes with
+Record a stretch of a YouTube video, or whatever plays in any other tab, as an MP3, then turn it
+into sheet music or letter notes with
 SheetSage2 through the [Score-Studio-API](https://huggingface.co/spaces/Reubencf/Score-Studio-API) Space.
 
 ## Install
@@ -26,6 +27,12 @@ To update, unzip the new release over the same folder and press reload on the ex
 4. A capture page opens with the MP3 (play or download). If "Turn into sheet music" was on, it
    sends the clip to SheetSage2 right away. Results are saved with the capture, so they outlive
    the Space's 24-hour file cache.
+
+On any other website (Spotify, SoundCloud, Bandcamp, a page with an audio player…), click the
+toolbar button on that tab and press **Record**, then play the music. Silence before the first sound
+is left out, and the recording runs until **Stop and keep**, or 10 minutes at most. Only that tab is
+recorded, never other tabs or the rest of the PC. Playing along **With video** needs YouTube's player,
+so those captures have the sheet's own playback only.
 
 All captures are listed under **Captures** in the panel's top bar.
 
@@ -108,7 +115,8 @@ a full `https://….hf.space` URL.
 
 - Manifest V3 with a service worker; all code, fonts, sounds and the Verovio WebAssembly ship in
   the package (no remotely hosted code). The pages' CSP adds only `wasm-unsafe-eval`, for Verovio.
-- Permissions, and why: `tabCapture` and `offscreen` record the tab, `sidePanel` shows the panel,
+- Permissions, and why: `tabCapture` and `offscreen` record the tab, `activeTab` lets the panel
+  see the title and address of a non-YouTube tab after you click the toolbar button there, `sidePanel` shows the panel,
   `scripting` adds the page script to YouTube tabs opened before install, `storage` keeps settings
   and the sign-in, `identity` runs the Hugging Face sign-in, and `nativeMessaging` talks to the
   optional yt-dlp helper. Hosts: YouTube (read the player), `huggingface.co` (sign-in) and

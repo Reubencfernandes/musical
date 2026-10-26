@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "YouTube to Score",
-  "version": "1.5.0",
-  "description": "Record part of a YouTube video and turn it into sheet music or letter notes with SheetSage2.",
+  "version": "1.6.0",
+  "description": "Record part of a YouTube video, or whatever plays in any tab, and turn it into sheet music or letter notes with SheetSage2.",
   "homepage_url": "https://github.com/Reubencfernandes/musical#chrome-extension-youtube-to-score",
   "minimum_chrome_version": "116",
   "action": {
@@ -23,6 +23,7 @@
     "service_worker": "background.js"
   },
   "permissions": [
+    "activeTab",
     "tabCapture",
     "offscreen",
     "storage",
