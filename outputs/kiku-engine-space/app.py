@@ -15,6 +15,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -812,15 +813,29 @@ def _seconds(path):
     return info.frames / float(info.samplerate)
 
 
+# SheetSage drops the whole score when one note will not fit its beat grid
+# ("Vocal: MIDI note pitch=88 at 299.950000-300.000000 cannot be represented on
+# the decoded subbeat grid"). That is nearly always a sliver of a note that the
+# selection cut off at its very end, so the clip is read again without it.
+OFF_GRID = re.compile(r"at ([\d.]+)-[\d.]+ cannot be represented")
+
+
 def _sheetsage(mono, rate=24000):
     """Score and beat rows for a mono 24 kHz clip, in memory."""
-    with torch.inference_mode():
-        try:
-            result = sheetsage().transcribe(mono, sampling_rate=rate, dtype="bf16")
-        except Exception as exc:
-            result = getattr(exc, "result", None)
-            if not result:
-                raise
+    for _ in range(3):
+        with torch.inference_mode():
+            try:
+                result = sheetsage().transcribe(mono, sampling_rate=rate, dtype="bf16")
+            except Exception as exc:
+                result = getattr(exc, "result", None)
+                if not result:
+                    raise
+        clipped = None if result.get("abc") else OFF_GRID.search(str(result.get("abc_error") or ""))
+        if not clipped or float(clipped.group(1)) < len(mono) / rate - 2:
+            break
+        mono = mono[:int(max(0.0, float(clipped.group(1)) - 0.05) * rate)]
+    if not result.get("abc"):
+        logging.warning("SheetSage wrote no score: %s", result.get("abc_error") or "no reason given")
     labs = result.get("labs") or {}
     return result.get("abc") or "", sync.beat_rows(labs.get("beat", ""))
 
