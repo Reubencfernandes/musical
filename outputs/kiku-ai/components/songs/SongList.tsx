@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import {useState} from 'react';
-import {Download,Pause,Play,SlidersHorizontal,Trash2,X,Check,CloudOff,ImagePlus,Globe,Lock,ScrollText} from 'lucide-react';
+import {Download,Pause,Play,SlidersHorizontal,Trash2,X,Check,CloudOff,ImagePlus,Globe,Lock,ScrollText,Pencil} from 'lucide-react';
 import SongArt from './SongArt';
 import LyricsDialog from './LyricsDialog';
 import {usePlayer} from '@/components/shell/Player';
@@ -36,11 +36,12 @@ export function MakingRow({item,now,cancel,dismiss}:{item:Making;now:number;canc
 
 type RowProps={item:Item;audioUrl:(item:Item)=>Promise<string>;remove:(item:Item)=>void;rename:(item:Item,title:string)=>void;
  paint?:(item:Item)=>void;painting?:boolean;share?:(item:Item,on:boolean)=>void;sharing?:boolean;
- /** The owner's handle: a saved song's title then opens its page, where it is renamed too. */
+ /** The owner's handle: a saved song's title then opens its page. The pencil renames it in place either way. */
  owner?:string};
 export function SongRow({item,audioUrl,remove,rename,paint,painting=false,share,sharing=false,owner}:RowProps){
  const player=usePlayer(),[confirming,setConfirming]=useState(false),[editing,setEditing]=useState(false),[title,setTitle]=useState(item.title),[reading,setReading]=useState(false);
  const active=player.current?.id===item.id,playing=active&&player.playing;
+ const startRename=()=>{setTitle(item.title);setEditing(true);};
  const play=()=>player.play({id:item.id,title:item.title,subtitle:item.caption,cover:!!item.cover,load:()=>audioUrl(item)});
  async function download(){
   try{const url=await audioUrl(item),link=document.createElement('a');link.href=url;link.download=(item.title.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_')||'kiku-song')+'.mp3';link.click();}catch{}
@@ -52,7 +53,7 @@ export function SongRow({item,audioUrl,remove,rename,paint,painting=false,share,
    {editing?<input className="song-title-input" value={title} autoFocus maxLength={80} aria-label="Song title" onChange={e=>setTitle(e.target.value)}
      onBlur={()=>{setEditing(false);rename(item,title);}} onKeyDown={e=>{if(e.key==='Enter')(e.target as HTMLInputElement).blur();if(e.key==='Escape'){setTitle(item.title);setEditing(false);}}}/>
     :<strong>{owner&&item.saved?<Link className="song-title" href={songPath(owner,item.id)} title="Open the song’s page">{item.title}</Link>
-     :<button className="song-title" onClick={()=>setEditing(true)} title="Rename">{item.title}</button>}</strong>}
+     :<button className="song-title" onClick={startRename} title="Rename">{item.title}</button>}</strong>}
    <span className="song-tags"><em>{label(item.model)}</em>{item.instrumental&&<em>Instrumental</em>}{item.meta?.bpm&&<em>{item.meta.bpm} BPM</em>}{item.meta?.keyscale&&<em>{item.meta.keyscale}</em>}
     {!item.saved&&<em className="unsaved" title="Only on this page until you allow saving"><CloudOff size={10}/> Not saved</em>}
     {item.public&&<em className="shared" title="Anyone can find this on Explore"><Globe size={10}/> Public</em>}</span>
@@ -61,7 +62,8 @@ export function SongRow({item,audioUrl,remove,rename,paint,painting=false,share,
   <span className="song-time">{clock(item.duration)}</span>
   <div className="song-actions">
    {confirming?<><span className="confirm-text">Delete?</span><button onClick={()=>{setConfirming(false);remove(item);}} aria-label="Delete for good"><Check size={15}/></button><button onClick={()=>setConfirming(false)} aria-label="Keep it"><X size={15}/></button></>
-    :<><button onClick={()=>setReading(true)} aria-label="Lyrics" title="Lyrics"><ScrollText size={15}/></button>
+    :<><button onClick={startRename} aria-label={`Rename ${item.title}`} title="Rename"><Pencil size={15}/></button>
+     <button onClick={()=>setReading(true)} aria-label="Lyrics" title="Lyrics"><ScrollText size={15}/></button>
      {share&&<button onClick={()=>share(item,!item.public)} disabled={sharing||!item.saved} aria-pressed={!!item.public}
       aria-label={item.public?'Make private':'Make public'} title={sharing?'Updating…':!item.saved?'Save it to your library to share it':item.public?'Public on Explore. Make private':'Private. Make public on Explore'}>
       {sharing?<span className="spinner"/>:item.public?<Globe size={15}/>:<Lock size={15}/>}</button>}

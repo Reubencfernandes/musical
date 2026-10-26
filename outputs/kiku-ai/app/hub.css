@@ -1667,6 +1667,18 @@ a.song-title {
  }
 }
 
+/* A phone has no room for a song's actions beside its title, so they get a line of their own. */
+@media (max-width:520px) {
+ .song-row {
+  grid-template-columns: 48px minmax(0,1fr);
+ }
+ .song-row>.song-actions {
+  grid-column: 2;
+  margin-left: -6px;
+  flex-wrap: wrap;
+ }
+}
+
 @media (prefers-reduced-motion:reduce) {
  .making-art {
   animation: none;
