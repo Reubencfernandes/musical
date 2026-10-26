@@ -1,14 +1,20 @@
 # One coherent stack for three models that pin conflicting versions.
 #
-# The YuE2 wheel has the strictest pins (torch 2.10.0, transformers 4.57.6,
+# The YuE2 package has the strictest pins (torch 2.10.0, transformers 4.57.6,
 # numpy 2.2.6, accelerate 1.13.0), so it is installed first and everything else
 # is fitted around it. ACE-Step pins transformers 4.50.0 and SheetSage2 pins
 # 4.45.2; pip cannot satisfy all three, so those two run on 4.57.6 and the
 # acestep package itself is installed with --no-deps at startup in app.py.
 # Its real inference imports are listed here instead.
-https://huggingface.co/m-a-p/YuE2-3B/resolve/14fc6c6f146441b1dd6363fcb2e01e82a6914cb7/yue2_infer-0.1.5-py3-none-any.whl
+# YuE2-Turbo (github.com/NoizAI/YuE2-Turbo): the same yue2-infer pipeline, 0.1.6,
+# with its autoregressive stage on vLLM 0.19.0, pinned to the reviewed commit.
+yue2-infer[fast] @ git+https://github.com/NoizAI/YuE2-Turbo@7c88813bfff9db9127f11c35b9e1b72983ded200
 
-gradio==5.49.1
+# vLLM needs pydantic >= 2.12 and would pull starlette 1.x. Gradio 5.50 is the newest
+# 5.x that takes that pydantic (<= 2.12.3), and it still needs starlette < 1.
+gradio==5.50.0
+pydantic==2.12.3
+starlette<1.0
 
 # ACE-Step inference dependencies (its training-only ones are deliberately absent)
 diffusers>=0.33.0

@@ -21,6 +21,12 @@ import sys
 import tempfile
 import time
 
+if os.environ.get("KIKU_RUNTIME") != "modal":
+    import site
+    # See vllm_mig.py: lets YuE2-Turbo's vLLM processes run on ZeroGPU's MIG slices.
+    Path(site.getsitepackages()[0], "kiku_vllm_mig.pth").write_text(
+        "%s\nimport vllm_mig\n" % Path(__file__).resolve().parent)
+
 import gradio as gr
 if os.environ.get("KIKU_RUNTIME") == "modal":
     import native_gpu as spaces
@@ -28,6 +34,8 @@ else:
     import spaces
 import torch
 
+import lyric_sections
+import writer
 import torchaudio_compat
 torchaudio_compat.apply()
 
@@ -36,6 +44,8 @@ SHEETSAGE_ID = "m-a-p/SheetSage2"
 SHEETSAGE_REV = "eab522a8168e8b8b8c4856bf8609cd86198f01fe"
 YUE2_ID = "m-a-p/YuE2-3B"
 YUE2_VAE = "m-a-p/YuE2-Vae"
+# A first YuE2 call starts the vLLM engine and compiles it: about 200 s on ZeroGPU.
+YUE2_COLD = 240
 # HeartTranscriptor: Whisper fine-tuned on separated vocals to write down sung lyrics (Apache 2.0).
 LYRICS_ID = "HeartMuLa/HeartTranscriptor-oss"
 LYRICS_REV = "918f88917c17489c1f8dbae0165cd1019c4d5cd3"
@@ -62,9 +72,15 @@ if os.environ.get("KIKU_RUNTIME") != "modal":
 
 from huggingface_hub import snapshot_download
 
-for repo in (() if os.environ.get("KIKU_RUNTIME") == "modal" else (YUE2_ID, YUE2_VAE, LYRICS_ID)):
+REVISIONS = {LYRICS_ID: LYRICS_REV, writer.MODEL: writer.REVISION}
+for repo in (() if os.environ.get("KIKU_RUNTIME") == "modal" else (YUE2_ID, YUE2_VAE, LYRICS_ID, writer.MODEL)):
     try:
-        snapshot_download(repo, revision=LYRICS_REV if repo == LYRICS_ID else None)
+        local = snapshot_download(repo, revision=REVISIONS.get(repo))
+        if repo == YUE2_ID:
+            # vLLM serves YuE2's AR tensors from their own checkpoint; extract it on CPU
+            # now so no GPU call spends its time on it.
+            from yue2.fast import derive_ar_checkpoint
+            derive_ar_checkpoint(local)
     except Exception:
         logging.exception("Could not pre-fetch %s; it downloads on first use", repo)
 
@@ -88,12 +104,29 @@ def yue2():
     if "yue2" not in ENGINES:
         from yue2 import YuE2Pipeline
         if os.environ.get("KIKU_RUNTIME") == "modal":
+            # YuE2-Turbo: vLLM runs the AR stage in its own process (about 30% of the
+            # L40S), so PyTorch's budget shrinks to leave it room. Models stay resident.
+            turbo = os.environ.get("KIKU_YUE2_BACKEND") == "vllm"
             ENGINES["yue2"] = YuE2Pipeline.from_pretrained(
-                "/data/yue2", vae="/data/yue2-vae", device="cuda",
-                local_files_only=True, backend="torch", memory_budget_gib=36,
+                "/data/yue2", vae="/data/yue2-vae", device="cuda", local_files_only=True,
+                **(dict(backend="vllm", resident_models=True, memory_budget_gib=30) if turbo
+                   else dict(backend="torch", memory_budget_gib=36)),
             )
         else:
-            ENGINES["yue2"] = YuE2Pipeline.from_pretrained(YUE2_ID, device="cuda")
+            # YuE2-Turbo on ZeroGPU: the vLLM engine starts once per GPU worker (about
+            # two minutes) and then lives across calls; a warm song takes about 60% of
+            # the PyTorch time. The MoT and VAE stay on the GPU too (about 8 GB), or
+            # reloading them would cost more than vLLM saves. If vLLM cannot start,
+            # the original path still sings.
+            try:
+                from yue2.fast import preload_vllm
+                pipe = YuE2Pipeline.from_pretrained(YUE2_ID, device="cuda", backend="vllm",
+                                                    resident_models=True)
+                preload_vllm(pipe)
+            except Exception:
+                logging.exception("YuE2-Turbo's vLLM engine did not start; using PyTorch")
+                pipe = YuE2Pipeline.from_pretrained(YUE2_ID, device="cuda")
+            ENGINES["yue2"] = pipe
     return ENGINES["yue2"]
 
 
@@ -103,6 +136,18 @@ def transcriptor():
         ENGINES["lyrics"] = pipeline("automatic-speech-recognition", model=LYRICS_ID, revision=LYRICS_REV,
                                      torch_dtype=torch.float16, device="cuda")
     return ENGINES["lyrics"]
+
+
+def lyricist():
+    """Qwen3-4B, which writes song ideas and style prompts (see writer.py). It waits
+    in CPU memory between calls, so YuE2 keeps the GPU's memory budget to itself."""
+    if "writer" not in ENGINES:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(writer.MODEL, revision=writer.REVISION)
+        model = AutoModelForCausalLM.from_pretrained(writer.MODEL, revision=writer.REVISION,
+                                                     torch_dtype=torch.bfloat16)
+        ENGINES["writer"] = (model.eval(), tokenizer)
+    return ENGINES["writer"]
 
 
 def acestep():
@@ -255,7 +300,7 @@ def transcribe(audio, start, duration, melody_only, piano, progress=gr.Progress(
 # -------------------------------------------------------------- songs (YuE2)
 
 def song_time(style, lyrics, cot, seed, abc, progress=None, **kwargs):
-    return max(90, min(420, 90 + int(len(lyrics or "") * 0.35))) + cold("yue2", 180)
+    return max(90, min(420, 90 + int(len(lyrics or "") * 0.35))) + cold("yue2", YUE2_COLD)
 
 
 def _song(style, lyrics, cot, seed, abc, progress):
@@ -309,11 +354,14 @@ def _generation_report(result, seed):
     truncated = getattr(result, "truncated", False)
     if isinstance(truncated, dict):
         truncated = any(truncated.values())
+    timing = getattr(result, "timing", None) or {}
+    # "vllm" is YuE2-Turbo; cot="off" and CFG requests run on PyTorch either way.
+    backend = (timing.get("semantic") or {}).get("backend_actual", "torch")
     return {"seed": seed, "truncated": bool(truncated), "model": YUE2_ID,
-            "decoder": "m-a-p/YuE2-Vae"}
+            "decoder": "m-a-p/YuE2-Vae", "backend": backend}
 
 
-@spaces.GPU(duration=lambda *args, **kwargs: 120 + cold("yue2", 180))
+@spaces.GPU(duration=lambda *args, **kwargs: 120 + cold("yue2", YUE2_COLD))
 def plan_score(style, lyrics, seed, instrumental=False, progress=gr.Progress()):
     """Only the symbolic stage: return a reviewable score before synthesizing audio."""
     if not (style or "").strip():
@@ -779,17 +827,27 @@ def _sheetsage(mono, rate=24000):
 
 def _words(vocal_path):
     """The sung lyrics as lines of text, written down by HeartTranscriptor (no timings)."""
-    import re
     import librosa
     mono, _ = librosa.load(vocal_path, sr=16000, mono=True)
     with torch.inference_mode():
         heard = transcriptor()({"raw": mono, "sampling_rate": 16000}, chunk_length_s=30, batch_size=8,
                                generate_kwargs=LYRICS_DECODING)
-    text = " ".join((heard.get("text") or "").split())
-    # It writes the lyrics as one run, starting each sung line with a capital (the
-    # pronoun I aside) and sometimes ending sentences: start a line at either.
-    lines = re.split(r"(?<=[.!?。！？])\s*|\s+(?=[A-Z])(?!(?:I|Ill|Im|Ive|Id)\b|I['’])", text)
-    return [line.strip() for line in lines if line and line.strip()]
+    return lyric_sections.lines_of(heard.get("text"))
+
+
+def _sung_lyrics(vocal_path, duration):
+    """The lyrics with [verse], [chorus] and other section tags. Each sung stretch is
+    transcribed on its own, which places the lines in time; see lyric_sections.py."""
+    import librosa
+    mono, sr = librosa.load(vocal_path, sr=16000, mono=True)
+    spans = lyric_sections.sung_spans(mono, sr)
+    if not spans:
+        return ""
+    clips = [{"raw": mono[int(start * sr):int(end * sr)], "sampling_rate": sr} for start, end in spans]
+    with torch.inference_mode():
+        heard = transcriptor()(clips, batch_size=8, generate_kwargs=LYRICS_DECODING)
+    return lyric_sections.sections([(span, item.get("text") or "") for span, item in zip(spans, heard)],
+                                   duration)
 
 
 def read_time(audio, words=False, separate="auto", transcribe=True, **kwargs):
@@ -803,10 +861,11 @@ def read_time(audio, words=False, separate="auto", transcribe=True, **kwargs):
 
 
 @spaces.GPU(duration=read_time)
-def _read_take(audio, words=False, separate="auto", transcribe=True):
+def _read_take(audio, words=False, separate="auto", transcribe=True, sections=False):
     """Score, bar clock, and (when asked) the singer's own lines and voice.
 
-    `transcribe=False` skips the score, for when the studio already sent one."""
+    `transcribe=False` skips the score, for when the studio already sent one.
+    `sections=True` also writes the words out with section tags, as "lyrics"."""
     import librosa
     job = job_dir()
     duration = _seconds(audio)
@@ -830,7 +889,10 @@ def _read_take(audio, words=False, separate="auto", transcribe=True):
             found["separated"] = True
             found["vocal"] = tools.write(tools.to_stereo(voice, sr), str(job / "your-vocal.flac"))
             found["background"] = tools.write(tools.to_stereo(rest, sr), str(job / "original-backing.flac"))
-    if words and found["voiced"]:
+    if words and found["voiced"] and sections:
+        found["lyrics"] = _sung_lyrics(found["vocal"], duration)
+        found["lines"] = [line for line in found["lyrics"].splitlines() if line and not line.startswith("[")]
+    elif words and found["voiced"]:
         found["lines"] = _words(found["vocal"])
     return found
 
@@ -838,7 +900,7 @@ def _read_take(audio, words=False, separate="auto", transcribe=True):
 def render_time(abc, style, lyrics, cot, seed, clock=None, span=0.0, strip_voice=False,
                 split_parts=False, beats=None, **kwargs):
     seconds = min(MAX_SCORE, float(span or 0) or 60)
-    total = 45 + int(seconds * 0.9) + cold("yue2", 180)
+    total = 45 + int(seconds * 0.9) + cold("yue2", YUE2_COLD)
     if clock:
         total += 30 + int(seconds * 0.45) + cold("sheetsage", 90)
     if strip_voice or split_parts:
@@ -1065,14 +1127,87 @@ def read_score(audio, words, progress=gr.Progress()):
 
 
 def lyrics_of(audio, progress=gr.Progress()):
-    """Just the words, for the studio's lyrics boxes. No score is read for them."""
+    """Just the words, tagged [verse], [chorus], [inst] and so on. No score is read for them."""
     guard(audio, "a recording")
     try:
         progress(0.05, desc="Listening to the words")
-        found = _read_take(audio, words=True, separate="auto", transcribe=False)
+        found = _read_take(audio, words=True, separate="auto", transcribe=False, sections=True)
         if not found["lines"]:
             return "No words were found.", ""
-        return "Found %d lines." % len(found["lines"]), "\n".join(found["lines"]) + "\n"
+        parts = sum(1 for line in found["lyrics"].splitlines() if line.startswith("["))
+        return "Found %d lines in %d sections." % (len(found["lines"]), parts), found["lyrics"]
+    except gr.Error:
+        raise
+    except Exception as exc:
+        raise failed(exc)
+
+
+# ------------------------------------------------------ song ideas (writer)
+
+def write_time(*args, **kwargs):
+    return 60 + cold("writer", 45)
+
+
+@spaces.GPU(duration=write_time)
+def _write(messages):
+    model, tokenizer = lyricist()
+    model.to("cuda")
+    try:
+        return writer.write(model, tokenizer, messages)
+    finally:
+        model.to("cpu")
+        torch.cuda.empty_cache()
+
+
+def _until_readable(messages, read):
+    """The writer samples, so an unreadable reply gets one more try."""
+    for attempt in range(2):
+        try:
+            return read(_write(messages))
+        except ValueError as exc:
+            if attempt:
+                raise gr.Error(str(exc))
+
+
+def sample(query, instrumental=False, language="", progress=gr.Progress()):
+    """A style, lyrics, tempo and key from a one-line idea, for Simple mode."""
+    query = (query or "").strip()
+    if not query:
+        raise gr.Error("Describe the song you want.")
+    if len(query) > 512:
+        raise gr.Error("Keep the idea under 500 characters.")
+    instrumental = instrumental in (True, "true", "True")
+    try:
+        progress(0.2, desc="Writing the song idea")
+        style, lyrics, meta = _until_readable(writer.song_messages(query, instrumental, language or ""),
+                                              lambda reply: writer.read_song(reply, instrumental))
+        return "Written", style, lyrics, json.dumps(meta)
+    except gr.Error:
+        raise
+    except Exception as exc:
+        raise failed(exc)
+
+
+def enhance(audio, caption, lyrics, progress=gr.Progress()):
+    """A full style prompt from a few words. With a recording, its measured tempo and
+    key are written into the prompt and returned as `measured`."""
+    caption = (caption or "").strip()
+    if not caption:
+        raise gr.Error("Describe the sound first, then enhance it.")
+    if len(caption) > 2000 or len(lyrics or "") > 8000:
+        raise gr.Error("That is longer than the engine accepts. Shorten it and try again.")
+    try:
+        measured = None
+        if audio:
+            progress(0.1, desc="Listening to the selection")
+            tempo, key, _, _ = tools.analyse(audio)
+            if tempo:
+                measured = {"bpm": int(tempo), **({"keyscale": key} if key else {})}
+        progress(0.3, desc="Writing the style")
+        style, meta = _until_readable(writer.enhance_messages(caption, lyrics or "", measured), writer.read_style)
+        if measured:
+            meta = {**meta, **measured, "measured": True}
+        return "Enhanced", style, json.dumps(meta)
     except gr.Error:
         raise
     except Exception as exc:
@@ -1333,9 +1468,32 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
                      [k_status, b_mix, k_out, b_stem, k_prompt, b_original, *b_parts, k_summary],
                      api_name="band_score", concurrency_limit=1)
 
+    with gr.Tab("Write a song idea"):
+        gr.Markdown("A small open language model ([Qwen3-4B-Instruct](https://huggingface.co/"
+                    "Qwen/Qwen3-4B-Instruct-2507), Apache 2.0) writes a style and lyrics for YuE2.")
+        w_idea = gr.Textbox(label="Idea", placeholder="a bittersweet summer song about leaving home")
+        w_inst = gr.Checkbox(label="Instrumental")
+        w_lang = gr.Textbox(label="Language (optional)", placeholder="English")
+        w_run = gr.Button("Write it", variant="primary")
+        w_status = gr.Textbox(label="Status")
+        w_style = gr.Textbox(label="Style")
+        w_lyrics = gr.Textbox(label="Lyrics", lines=12)
+        w_meta = gr.Code(label="Tempo and key", language="json")
+        w_run.click(sample, [w_idea, w_inst, w_lang], [w_status, w_style, w_lyrics, w_meta],
+                    api_name="sample", concurrency_limit=2)
+        e_audio = gr.Audio(label="Recording to measure (optional)", type="filepath", sources=["upload"])
+        e_caption = gr.Textbox(label="A few words about the sound", placeholder="warm lofi, rainy")
+        e_lyrics = gr.Textbox(label="Lyrics (when it is sung)", lines=3)
+        e_run = gr.Button("Enhance the style")
+        e_status, e_style = gr.Textbox(label="Status"), gr.Textbox(label="Style")
+        e_meta = gr.Code(label="Tempo and key", language="json")
+        e_run.click(enhance, [e_audio, e_caption, e_lyrics], [e_status, e_style, e_meta],
+                    api_name="enhance", concurrency_limit=2)
+
     gr.Markdown("Powered by [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) and "
                 "[YuE2](https://huggingface.co/m-a-p/YuE2-3B) (both CC BY-NC 4.0, "
-                "non-commercial), [ACE-Step](https://github.com/ace-step/ACE-Step) (Apache 2.0) "
+                "non-commercial), [ACE-Step](https://github.com/ace-step/ACE-Step) (Apache 2.0), "
+                "[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) (Apache 2.0) "
                 "and [Demucs](https://github.com/adefossez/demucs) (MIT). "
                 "Temporary files expire after 24 hours.")
 
@@ -1344,7 +1502,7 @@ def health():
     return {"status": "ready", "loaded": sorted(ENGINES),
             "models": {"transcription": SHEETSAGE_ID, "songs": YUE2_ID,
                        "instrumental": "ACE-Step-v1-3.5B", "separator": "htdemucs",
-                       "lyrics": LYRICS_ID}}
+                       "lyrics": LYRICS_ID, "writer": writer.MODEL}}
 
 
 def oauth_metadata():

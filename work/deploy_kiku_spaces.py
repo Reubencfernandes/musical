@@ -40,6 +40,8 @@ HARDWARE = "zero-a10g"
 SPACES = [
     ("Kiku-Engine", ROOT / "kiku-engine-space"),
     ("Kiku-ACE-Step-15", ROOT / "kiku-acestep15-space"),
+    # Z-Image Turbo song artwork, in its own Space so its diffusers/torch stack stays separate.
+    ("Kiku-Art", ROOT / "kiku-art-space"),
 ]
 # Build artefacts and local test scratch never belong in a Space.
 IGNORE = ["__pycache__/*", "*.pyc", ".ipynb_checkpoints/*", "*.wav", "*.flac", "data/*"]
@@ -61,9 +63,12 @@ def main():
             sys.exit("No app.py in %s" % folder)
         repo_id = "%s/%s" % (OWNER, name)
         print("\n--- %s ---" % repo_id)
-        api.create_repo(repo_id, repo_type="space", space_sdk="gradio",
-                        space_hardware=HARDWARE, exist_ok=True, private=False)
-        print("  Space ready on %s" % HARDWARE)
+        # Asking for ZeroGPU again on an existing Space is refused once the account
+        # is at its ZeroGPU Space limit, so only new Spaces are created.
+        if not api.repo_exists(repo_id, repo_type="space"):
+            api.create_repo(repo_id, repo_type="space", space_sdk="gradio",
+                            space_hardware=HARDWARE, private=False)
+            print("  Created on %s" % HARDWARE)
         api.upload_folder(repo_id=repo_id, repo_type="space", folder_path=str(folder),
                           ignore_patterns=IGNORE,
                           commit_message="Deploy %s" % name)

@@ -4,7 +4,7 @@ emoji: 🎛️
 colorFrom: purple
 colorTo: red
 sdk: gradio
-sdk_version: 5.49.1
+sdk_version: 5.50.0
 app_file: app.py
 python_version: 3.10.13
 short_description: One ZeroGPU API for transcription, songs and backing tracks
@@ -12,6 +12,7 @@ models:
   - m-a-p/SheetSage2
   - m-a-p/YuE2-3B
   - ACE-Step/ACE-Step-v1-3.5B
+  - Qwen/Qwen3-4B-Instruct-2507
 tags:
   - text-to-music
   - zerogpu

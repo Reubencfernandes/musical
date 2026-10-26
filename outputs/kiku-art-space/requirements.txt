@@ -1,0 +1,12 @@
+# ZeroGPU's supported torch, as on the Kiku ACE-Step 1.5 Space.
+torch==2.9.1
+torchvision==0.24.1
+# ZImagePipeline ships in diffusers releases since 0.36.
+diffusers==0.40.0
+# diffusers 0.40 needs huggingface-hub >= 1.23, which only transformers 5 accepts.
+transformers==5.17.0
+huggingface-hub>=1.23.0,<2.0
+accelerate>=1.12.0
+gradio==6.2.0
+spaces
+pillow
