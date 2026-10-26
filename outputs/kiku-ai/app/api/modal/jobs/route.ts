@@ -1,6 +1,6 @@
 import {Client,handle_file} from '@gradio/client';
 import {authorize} from '@/lib/auth';
-import {ACE15,YUE2,JOBS,route} from '@/lib/jobs';
+import {YUE2,JOBS,route} from '@/lib/jobs';
 import {modalEngine,modalFile} from '@/lib/modal-engine';
 import {follow,jobOf,startJob} from '@/lib/modal-jobs';
 export const runtime='nodejs';
@@ -27,7 +27,7 @@ export async function POST(req:Request){
  }catch{return Response.json({error:oversized?'Select less audio. Uploads are limited to 100 MB.':'That request could not be read.'},{status:oversized?413:400});}
  const picked=route(spec,input);
  if('error' in picked)return Response.json(picked,{status:400});
- if(picked.engine!==ACE15&&picked.engine!==YUE2)return Response.json({error:'This action does not use a Modal engine.'},{status:400});
+ if(picked.engine!==YUE2)return Response.json({error:'This action does not use a Modal engine.'},{status:400});
  const built=spec.build(input,picked.model);
  if('error' in built)return Response.json(built,{status:400});
  const file=input.get('audio'),audio=file instanceof Blob&&file.size?file:null;
@@ -42,7 +42,7 @@ export async function POST(req:Request){
   }
  }
  let config:ReturnType<typeof modalEngine>;
- try{config=modalEngine(picked.engine===YUE2?'yue2':'ace15');}catch{return Response.json({error:'The Modal GPU connection is not configured.'},{status:503});}
+ try{config=modalEngine('yue2');}catch{return Response.json({error:'The Modal GPU connection is not configured.'},{status:503});}
  const id=startJob(auth.session.user.id,async(send,cancelled)=>{
   const signal=AbortSignal.any([cancelled,AbortSignal.timeout(1200000)]);
   let client:Client|undefined,job:ReturnType<Client['submit']>|undefined;

@@ -1,10 +1,15 @@
 'use client';
+import Link from 'next/link';
 import {useCallback,useEffect,useState} from 'react';
 import {CloudUpload,FileMusic,SlidersHorizontal,Trash2,Check,X,AudioLines} from 'lucide-react';
 import {SongRow} from '@/components/songs/SongList';
 import {useSongs} from '@/components/songs/useSongs';
+import {SongSkeletons} from '@/components/Skeleton';
 import {type SavedProject,type SavedScore,LIBRARY,allowSaving,deleteProject,deleteScore,listProjects,listScores} from '@/lib/library';
 import type {User} from '@/components/shell/session';
+import RequireSession from '@/components/shell/RequireSession';
+
+export function LibraryScreen(){return <RequireSession>{user=><Library user={user}/>}</RequireSession>;}
 
 type Tab='songs'|'projects'|'scores';
 const when=(iso:string)=>new Date(iso).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
@@ -20,7 +25,7 @@ function Row({icon,title,detail,href,remove}:{icon:React.ReactNode;title:string;
 
 export default function Library({user}:{user:User}){
  const [tab,setTab]=useState<Tab>('songs');
- const songs=useSongs(user.storage);
+ const songs=useSongs();
  const [projects,setProjects]=useState<SavedProject[]|null>(null),[scores,setScores]=useState<SavedScore[]|null>(null),[error,setError]=useState('');
  const load=useCallback(()=>{
   listProjects().then(setProjects).catch(e=>{setProjects([]);setError((e as Error).message);});
@@ -35,18 +40,20 @@ export default function Library({user}:{user:User}){
    <button onClick={()=>allowSaving('/library')}>Allow saving</button></div>}
   <div className="lib-tabs" role="tablist">{(['songs','projects','scores'] as Tab[]).map(t=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'on':''} onClick={()=>setTab(t)}>
    {t==='songs'?'Songs':t==='projects'?'Studio projects':'Scores'}<em>{counts[t]}</em></button>)}</div>
-  {error&&<p className="gen-error" role="alert">{error}</p>}
-  {tab==='songs'&&<ul className="song-list">{songs.songs.map(s=><SongRow key={s.id} item={s} audioUrl={songs.audioUrl} remove={i=>void songs.remove(i)} rename={(i,t)=>void songs.rename(i,t)} paint={i=>void songs.paint(i)} painting={songs.painting.has(s.id)}/>)}
-   {!songs.loading&&!songs.songs.length&&<p className="gen-empty"><AudioLines size={16}/> No songs yet. <a href="/generate">Make one</a>.</p>}</ul>}
-  {tab==='projects'&&<ul className="lib-list">{projects===null?<p className="gen-empty"><span className="spinner"/> Loading…</p>
-   :projects.length?projects.map(p=><Row key={p.id} icon={<SlidersHorizontal size={17}/>} title={p.name} href={`/studio?project=${encodeURIComponent(p.id)}`}
+  {(error||songs.error)&&<p className="gen-error" role="alert">{error||songs.error}</p>}
+  {tab==='songs'&&(songs.loading&&!songs.songs.length?<SongSkeletons label="Loading your songs…"/>
+   :songs.songs.length?<ul className="song-list m-0 flex list-none flex-col gap-[2px] p-0">{songs.songs.map(s=><SongRow key={s.id} item={s} audioUrl={songs.audioUrl} remove={i=>void songs.remove(i)} rename={(i,t)=>void songs.rename(i,t)} paint={i=>void songs.paint(i)} painting={songs.painting.has(s.id)}
+   share={(i,on)=>void songs.share(i,on)} sharing={songs.sharing.has(s.id)} owner={user.handle}/>)}
+   </ul>:<p className="gen-empty"><AudioLines size={16}/> No songs yet. <Link href="/generate">Make one</Link>.</p>)}
+  {tab==='projects'&&(projects===null?<SongSkeletons view="items" label="Loading studio projects…"/>
+   :projects.length?<ul className="lib-list m-0 flex list-none flex-col gap-[2px] p-0">{projects.map(p=><Row key={p.id} icon={<SlidersHorizontal size={17}/>} title={p.name} href={`/studio?project=${encodeURIComponent(p.id)}`}
     detail={`${p.tracks} track${p.tracks===1?'':'s'} · ${clock(p.duration)} · saved ${when(p.updatedAt)}`}
-    remove={()=>void deleteProject(p).then(()=>setProjects(list=>list?.filter(x=>x.id!==p.id)??null)).catch(e=>setError((e as Error).message))}/>)
-   :<p className="gen-empty"><SlidersHorizontal size={16}/> Projects you save in the <a href="/studio">studio</a> appear here.</p>}</ul>}
-  {tab==='scores'&&<ul className="lib-list">{scores===null?<p className="gen-empty"><span className="spinner"/> Loading…</p>
-   :scores.length?scores.map(s=><Row key={s.id} icon={<FileMusic size={17}/>} title={s.title} href={`/score?saved=${encodeURIComponent(s.id)}`}
+    remove={()=>void deleteProject(p).then(()=>setProjects(list=>list?.filter(x=>x.id!==p.id)??null)).catch(e=>setError((e as Error).message))}/>)}</ul>
+   :<p className="gen-empty"><SlidersHorizontal size={16}/> Projects you save in the <a href="/studio">studio</a> appear here.</p>)}
+  {tab==='scores'&&(scores===null?<SongSkeletons view="items" label="Loading scores…"/>
+   :scores.length?<ul className="lib-list m-0 flex list-none flex-col gap-[2px] p-0">{scores.map(s=><Row key={s.id} icon={<FileMusic size={17}/>} title={s.title} href={`/score?saved=${encodeURIComponent(s.id)}`}
     detail={`${clock(s.duration)} · ${when(s.createdAt)}`}
-    remove={()=>void deleteScore(s).then(()=>setScores(list=>list?.filter(x=>x.id!==s.id)??null)).catch(e=>setError((e as Error).message))}/>)
-   :<p className="gen-empty"><FileMusic size={16}/> Sheet music you make on the <a href="/score">Score</a> page appears here.</p>}</ul>}
+    remove={()=>void deleteScore(s).then(()=>setScores(list=>list?.filter(x=>x.id!==s.id)??null)).catch(e=>setError((e as Error).message))}/>)}</ul>
+   :<p className="gen-empty"><FileMusic size={16}/> Sheet music you make on the <a href="/score">Score</a> page appears here.</p>)}
  </div>;
 }

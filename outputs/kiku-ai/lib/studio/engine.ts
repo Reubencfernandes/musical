@@ -1,6 +1,6 @@
 import type {Client} from '@gradio/client';
 import type {Download} from '@/lib/types';
-import {ACE15,YUE2,JOBS,type Engine,type Input,type Job,asFile,explain,route} from '@/lib/jobs';
+import {YUE2,JOBS,type Engine,type Input,type Job,asFile,explain,route} from '@/lib/jobs';
 import {encodeWav} from './audio';
 
 /** Raised when the session has lapsed, so the studio can show sign-in without losing the project. */
@@ -85,7 +85,7 @@ const backOnline=(signal:AbortSignal)=>new Promise<void>(done=>{
 });
 
 /**
- * ACE-Step 1.5 and YuE2 run on our private Modal GPU through the authenticated
+ * YuE2-Turbo runs on our private Modal GPU through the authenticated
  * app server. The job lives on the server, not in this connection: when
  * Hugging Face's proxy drops the stream, or the browser goes offline, this
  * reattaches and carries on from the last event it saw instead of losing the
@@ -101,7 +101,9 @@ async function runModal<T>(name:Job,input:Input,call:Call):Promise<T>{
  if(!response.ok){
   const data=await response.json().catch(()=>({}));
   if(response.status===401)throw new SignedOut(data.error||'Sign in again to continue.');
-  throw new Error(data.error||'Could not reach the Modal GPU. Try again.');
+  // A 502-504 with no message is Hugging Face's proxy answering while Kiku itself restarts (a new deployment).
+  throw new Error(data.error||(response.status>=502&&response.status<=504?'Kiku is restarting. Try again in a minute; nothing was started.'
+   :'Could not reach the Modal GPU. Try again.'));
  }
  return followModal<T>(response,'',call);
 }
@@ -188,7 +190,7 @@ export async function runJob<T>(name:Job,input:Input,{signal,status,progress,job
   if(seconds!==null&&seconds<limits.min-0.05)throw new Error(`Use at least ${limits.min} seconds of audio.`);
   if(seconds!==null&&seconds>limits.max+0.05)throw new Error(`The engine takes up to ${limits.max/60} minutes at once. Select a shorter part; nothing was submitted.`);
  }
- if(engine===ACE15||engine===YUE2)return runModal<T>(name,input,{signal,status,progress,job});
+ if(engine===YUE2)return runModal<T>(name,input,{signal,status,progress,job});
  const endpoint=typeof spec.endpoint==='function'?spec.endpoint(model):spec.endpoint;
  const token=await hfToken();
  const {handle_file}=await import('@gradio/client');

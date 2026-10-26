@@ -74,28 +74,7 @@ export function encodeWav(buffer:AudioBuffer){
  return new Blob([view.buffer],{type:'audio/wav'});
 }
 
-const PEAK_BLOCK=256;
-const peakCache=new WeakMap<AudioBuffer,Float32Array>();
-/** Min and max of every 256-sample block, mixed to mono, for drawing waveforms at any zoom. */
-export function peaks(buffer:AudioBuffer){
- let found=peakCache.get(buffer);
- if(found)return found;
- const blocks=Math.ceil(buffer.length/PEAK_BLOCK);
- found=new Float32Array(blocks*2);
- const channels=Array.from({length:buffer.numberOfChannels},(_,ch)=>buffer.getChannelData(ch));
- for(let b=0;b<blocks;b++){
-  let lo=0,hi=0;
-  const end=Math.min(buffer.length,(b+1)*PEAK_BLOCK);
-  for(let i=b*PEAK_BLOCK;i<end;i++){
-   let v=0;for(const data of channels)v+=data[i];v/=channels.length;
-   if(v<lo)lo=v;if(v>hi)hi=v;
-  }
-  found[b*2]=lo;found[b*2+1]=hi;
- }
- peakCache.set(buffer,found);
- return found;
-}
-export const peakRate=(buffer:AudioBuffer)=>buffer.sampleRate/PEAK_BLOCK;
+export {peaks,peakRate} from './waveform';
 
 type Store=Map<string,AudioBuffer>;
 type RenderOptions={

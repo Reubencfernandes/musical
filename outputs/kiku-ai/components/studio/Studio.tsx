@@ -404,7 +404,7 @@ export default function Studio({user,signOut,open={}}:{user:{name:string;storage
    onChange={e=>{void importFiles([...(e.target.files||[])]);e.target.value='';}}/>
   <header className="studio-bar">
    <div className="studio-brand">
-    <Logo className="studio-logo" size={26}/>
+    <Logo className="studio-logo" size={26} documentNavigation/>
     <details className="project-menu">
      <summary className="header-pill"><span>{projectName}</span><ChevronDown size={12}/></summary>
      <div className="studio-popover">

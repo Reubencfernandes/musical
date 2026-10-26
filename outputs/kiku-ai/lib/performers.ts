@@ -12,10 +12,9 @@ export const GRID_SPACING=9;
 export type PerformerDot={x:number;y:number;coverage:Float32Array};
 const cache=new Map<PerformerId,Promise<PerformerDot[]>>();
 
-export function choosePerformer(previous:PerformerId|null):PerformerId{
- const options=PERFORMERS.filter(item=>item.id!==previous);
- return options[Math.floor(Math.random()*options.length)].id;
-}
+/** Every processing screen shows the same musician, so the wait always looks the same. */
+export const PERFORMER:PerformerId='saxophone';
+export function choosePerformer(_previous?:PerformerId|null):PerformerId{return PERFORMER;}
 
 // Continuous slopes avoid a stop/start at each illustrated pose.
 export function coverageAt(poses:Float32Array,position:number){

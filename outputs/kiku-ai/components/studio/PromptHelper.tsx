@@ -1,7 +1,6 @@
 'use client';
 import {useState} from 'react';
 import {Plus} from 'lucide-react';
-import './prompt.css';
 
 /**
  * Words to build a caption from. ACE-Step follows its caption more than

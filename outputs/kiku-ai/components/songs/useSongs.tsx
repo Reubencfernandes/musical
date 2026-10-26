@@ -1,13 +1,15 @@
 'use client';
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {createContext,useCallback,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {type Progress,LEAVING,SignedOut,fetchResult,resumeJob,runJob} from '@/lib/studio/engine';
-import {type Song,NeedsStorage,deleteSong,listSongs,newId,renameSong,saveSong,saveSongCover,songAudio} from '@/lib/library';
+import {type Song,NeedsStorage,deleteSong,listSongs,markSongPublic,newId,renameSong,saveSong,saveSongCover,songAudio,songCover} from '@/lib/library';
+import {type Creator,publishSong,unpublishSong,updateShared} from '@/lib/shared';
 import {all,put,remove as forget} from '@/lib/local';
-import {generateCover,publishCover,forgetCover} from '@/lib/song-covers';
+import {cachedCover,generateCover,publishCover,forgetCover} from '@/lib/song-covers';
 import {toMp3} from '@/lib/mp3';
 import type {Meta} from '@/lib/jobs';
 import type {Model} from '@/lib/studio/models';
-import type {SongResult} from '@/lib/types';
+import type {CoverResult,SongResult} from '@/lib/types';
+import type {User} from '@/components/shell/session';
 
 /** A song in the list. `local` holds audio not saved to the library yet. */
 export type Item=Song&{local?:Blob;localCover?:Blob;saved:boolean};
@@ -15,8 +17,14 @@ export type Item=Song&{local?:Blob;localCover?:Blob;saved:boolean};
 export type Making={id:string;title:string;status:string;began:number;running:number|null;progress:number|null;etaAt:number|null;queue:number|null;error?:string};
 export type Request=
  |{mode:'simple';idea:string;instrumental:boolean;model?:Model}
- |{mode:'custom';caption:string;lyrics:string;instrumental:boolean;model:Model;duration:number|null;meta?:Meta};
-/** The caption and lyrics a song is sung from: written by ACE-Step's planner in simple mode, or the user's own. */
+ |{mode:'custom';caption:string;lyrics:string;instrumental:boolean;model:Model;duration:number|null;meta?:Meta}
+ /**
+  * A YuE2 cover of an uploaded song: its tune in a new style. `audio` is the song as WAV;
+  * empty lyrics mean the song's own words, which the engine transcribes. Playing (not
+  * singing) the melody makes an instrumental.
+  */
+ |{mode:'cover';title:string;audio:Blob;style:string;lyrics:string;instrumental:boolean;harmony?:'keep'|'free'};
+/** The caption and lyrics a song is sung from: written by the engine's writer in simple mode, or the user's own. */
 type Idea={caption:string;lyrics:string;meta?:Meta;model:Model;duration:number|null};
 /**
  * What this browser keeps (lib/local) so a refresh loses nothing: a song being
@@ -37,15 +45,20 @@ export function titleFrom(text:string){
 async function decode(data:ArrayBuffer){return new OfflineAudioContext(2,1,48000).decodeAudioData(data);}
 const keepLocally=(record:Kept)=>put('songs',record).catch(()=>{});
 
+/** Who a shared song is by, from the signed-in user's Hugging Face profile. */
+export const creatorOf=(user:User):Creator=>({handle:user.handle,name:user.fullname,avatar:user.avatar});
+
 /**
  * The user's songs: what is in their library plus what this page made, and the
  * songs being made. Simple mode lets ACE-Step's language model write the caption
- * and lyrics first (its "sample" step); custom mode sends the user's own.
+ * and lyrics first (its "sample" step); custom mode sends the user's own; cover
+ * mode has YuE2 perform an uploaded song's tune.
  */
-export function useSongs(storage:boolean){
+function useSongStore(user:User){
+ const storage=user.storage,creator=useRef(creatorOf(user));creator.current=creatorOf(user);
  const [songs,setSongs]=useState<Item[]>([]),[making,setMaking]=useState<Making[]>([]);
  const [loading,setLoading]=useState(true),[needsStorage,setNeedsStorage]=useState(!storage),[error,setError]=useState('');
- const [painting,setPainting]=useState<Set<string>>(()=>new Set());
+ const [painting,setPainting]=useState<Set<string>>(()=>new Set()),[sharing,setSharing]=useState<Set<string>>(()=>new Set());
  const urls=useRef(new Map<string,string>()),controllers=useRef(new Map<string,AbortController>());
  // Songs whose current step has a server ID, and so can be picked up again later.
  const resumable=useRef(new Set<string>());
@@ -93,32 +106,44 @@ export function useSongs(storage:boolean){
   if(record.server)resumable.current.add(id);
   const call={signal:controller.signal,status,progress,job:(server:string)=>{remember({server});resumable.current.add(id);}};
   (async()=>{
-   let idea:Idea;
-   if(record.step==='idea'&&request.mode==='simple'){
-    status('Writing the lyrics and style…');
-    const sample=record.server?await resumeJob<{caption:string;lyrics:string;meta:Meta}>(record.server,call)
-     :await runJob<{caption:string;lyrics:string;meta:Meta}>('sample',{query:request.idea,instrumental:String(request.instrumental)},call);
-    idea={caption:sample.caption,lyrics:request.instrumental?'':sample.lyrics,meta:sample.meta,model:request.model??'ace15',duration:sample.meta.duration??null};
-    remember({step:'song',server:undefined,idea});resumable.current.delete(id);
-    // The sung part starts its own clock: writing the idea is a separate GPU call.
-    setMaking(list=>list.map(m=>m.id===id?{...m,running:null,progress:null,etaAt:null}:m));
-   }else idea=record.idea??(request.mode==='custom'
-    ?{caption:request.caption,lyrics:request.instrumental?'':request.lyrics,meta:request.meta,model:request.model,duration:request.duration}
-    :{caption:request.idea,lyrics:'',model:request.model??'ace15',duration:null});
-   const {caption,lyrics,meta,model,duration}=idea;
-   const instrumental=request.instrumental||!lyrics.trim();
-   const result=record.server?await resumeJob<SongResult>(record.server,call):instrumental
-    ?await runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1},call)
-    :await runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{})},call);
+   let idea:Idea,instrumental:boolean,result:SongResult|CoverResult;
+   if(request.mode==='cover'){
+    // The tune and, unless lyrics were given, the words come from the uploaded song.
+    idea={caption:request.style,lyrics:'',model:'yue2',duration:null};instrumental=request.instrumental;
+    const form=new FormData();form.append('audio',new File([request.audio],'song.wav',{type:'audio/wav'}));
+    const fields={style:request.style,lyrics:instrumental?'':request.lyrics,voice:instrumental?'play':'sing',harmony:request.harmony??'keep',model:'yue2',seed:'-1'};
+    for(const [key,value] of Object.entries(fields))form.append(key,value);
+    const cover=record.server?await resumeJob<CoverResult>(record.server,call):await runJob<CoverResult>('cover',form,call);
+    idea.lyrics=instrumental?'':(cover.lyrics||request.lyrics).trim();result=cover;
+   }else{
+    if(record.step==='idea'&&request.mode==='simple'){
+     status('Writing the lyrics and style…');
+     const sample=record.server?await resumeJob<{caption:string;lyrics:string;meta:Meta}>(record.server,call)
+      :await runJob<{caption:string;lyrics:string;meta:Meta}>('sample',{query:request.idea,instrumental:String(request.instrumental)},call);
+     idea={caption:sample.caption,lyrics:request.instrumental?'':sample.lyrics,meta:sample.meta,model:request.model??'yue2',duration:sample.meta.duration??null};
+     remember({step:'song',server:undefined,idea});resumable.current.delete(id);
+     // The sung part starts its own clock: writing the idea is a separate GPU call.
+     setMaking(list=>list.map(m=>m.id===id?{...m,running:null,progress:null,etaAt:null}:m));
+    }else idea=record.idea??(request.mode==='custom'
+     ?{caption:request.caption,lyrics:request.instrumental?'':request.lyrics,meta:request.meta,model:request.model,duration:request.duration}
+     :{caption:request.idea,lyrics:'',model:request.model??'yue2',duration:null});
+    const {caption,lyrics,meta,model,duration}=idea;
+    instrumental=request.instrumental||!lyrics.trim();
+    result=record.server?await resumeJob<SongResult>(record.server,call):instrumental
+     ?await runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1},call)
+     :await runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{})},call);
+   }
+   const {caption,lyrics,meta,model}=idea;
    if(!result.audio)throw new Error('The engine did not return the song.');
    status('Preparing your song…');
    const buffer=await decode(await fetchResult(result.audio,controller.signal));
    const mp3=await toMp3(buffer);
-   const item:Item={id,title,caption,lyrics,instrumental,model,seed:result.seed??result.report?.seed,duration:buffer.duration,
+   const item:Item={id,title,caption,lyrics,instrumental,model,seed:('seed' in result?result.seed:undefined)??result.report?.seed,duration:buffer.duration,
     createdAt:new Date().toISOString(),meta,idea:request.mode==='simple'?request.idea:undefined,local:mp3,saved:false};
    // Kept in this browser until the library has it.
    await keepLocally({id,kind:'unsaved',item});
    setSongs(list=>[item,...list]);setMaking(list=>list.filter(m=>m.id!==id));
+   // Optional: without a GPU allowance left, the song keeps its gradient.
    const artwork=generateCover(item,controller.signal).catch(()=>null);
    const saved=await keep(item);
    if(controller.signal.aborted){if(saved&&removed.current.has(id))await deleteSong(item);return;}
@@ -138,7 +163,7 @@ export function useSongs(storage:boolean){
   }).finally(()=>{controllers.current.delete(id);resumable.current.delete(id);});
  },[keep]);
  const create=useCallback((request:Request)=>{
-  make(newId(),titleFrom(request.mode==='simple'?request.idea:request.caption),request,Date.now());
+  make(newId(),request.mode==='cover'?request.title:titleFrom(request.mode==='simple'?request.idea:request.caption),request,Date.now());
  },[make]);
  // Pick up what a refreshed page was making, and show finished songs the library does not have yet.
  useEffect(()=>{
@@ -164,7 +189,7 @@ export function useSongs(storage:boolean){
    setSongs(list=>list.map(s=>s.id===item.id?{...s,cover:cover.metadata,localCover:cover.blob}:s));
    const withCover={...item,cover:cover.metadata,localCover:cover.blob};
    if(item.saved)await saveSongCover(withCover,cover.blob);else if(storageAllowed.current)await keep(withCover);
-  }catch(e){setError(e instanceof NeedsStorage?'The cover is shown here, but saving it needs permission.':'The cover art could not be made. Try again.');}
+  }catch(e){setError(e instanceof NeedsStorage?'The cover is shown here, but saving it needs permission.':'The cover art could not be made: '+(e as Error).message);}
   finally{setPainting(set=>{const next=new Set(set);next.delete(item.id);return next;});}
  },[keep]);
  const cancel=useCallback((id:string)=>{controllers.current.get(id)?.abort();setMaking(list=>list.filter(m=>m.id!==id));void forget('songs',id).catch(()=>{});},[]);
@@ -172,13 +197,49 @@ export function useSongs(storage:boolean){
  const remove=useCallback(async(item:Item)=>{
   removed.current.add(item.id);
   controllers.current.get(item.id)?.abort();
-  try{if(item.saved)await deleteSong(item);forgetCover(item.id);setSongs(list=>list.filter(s=>s.id!==item.id));void forget('songs',item.id).catch(()=>{});}
-  catch(e){setError((e as Error).message);}
+  try{
+   if(item.public)await unpublishSong(item,creator.current);
+   if(item.saved)await deleteSong(item);forgetCover(item.id);setSongs(list=>list.filter(s=>s.id!==item.id));void forget('songs',item.id).catch(()=>{});
+  }catch(e){setError((e as Error).message);}
  },[]);
  const rename=useCallback(async(item:Item,title:string)=>{
   const next=title.trim().slice(0,80);if(!next||next===item.title)return;
   setSongs(list=>list.map(s=>s.id===item.id?{...s,title:next}:s));
-  try{if(item.saved)await renameSong(item,next);else void keepLocally({id:item.id,kind:'unsaved',item:{...item,title:next}});}catch(e){setError((e as Error).message);}
+  try{
+   if(item.saved)await renameSong(item,next);else void keepLocally({id:item.id,kind:'unsaved',item:{...item,title:next}});
+   if(item.public)await updateShared({...item,title:next},creator.current);
+  }catch(e){setError((e as Error).message);}
  },[]);
- return {songs,making,loading,needsStorage,error,setError,create,cancel,dismiss,remove,rename,audioUrl,reload,saveUnsaved,paint,painting};
+ /**
+  * Share a song on Explore, or make it private again. Only songs in the library can
+  * be shared, so the library can remember which ones are.
+  */
+ const share=useCallback(async(item:Item,on:boolean)=>{
+  if(!item.saved||sharing.has(item.id))return;
+  setSharing(set=>new Set(set).add(item.id));setError('');
+  try{
+   if(on){
+    const audio=item.local??await songAudio(item);if(!audio)throw new Error('This song’s audio is missing.');
+    const cover=item.cover?item.localCover??cachedCover(item.id)??await songCover(item.id):null;
+    await publishSong(item,audio,cover,creator.current);
+   }else await unpublishSong(item,creator.current);
+   setSongs(list=>list.map(s=>s.id===item.id?{...s,public:on||undefined}:s));
+   await markSongPublic(item,on);
+  }catch(e){setError(e instanceof NeedsStorage?'Sharing needs permission to save to your Hugging Face account.'
+   :(on?'The song could not be shared: ':'The song could not be made private: ')+(e as Error).message);}
+  finally{setSharing(set=>{const next=new Set(set);next.delete(item.id);return next;});}
+ },[sharing]);
+ return {songs,making,loading,needsStorage,error,setError,create,cancel,dismiss,remove,rename,audioUrl,reload,saveUnsaved,paint,painting,share,sharing};
+}
+
+const SongsContext=createContext<ReturnType<typeof useSongStore>|null>(null);
+function SignedSongsProvider({user,children}:{user:User;children:ReactNode}){
+ const songs=useSongStore(user);return <SongsContext.Provider value={songs}>{children}</SongsContext.Provider>;
+}
+/** Jobs and object URLs belong to the shared layout, so navigation doesn't interrupt them. */
+export function SongsProvider({user,children}:{user:User|null;children:ReactNode}){
+ return user?<SignedSongsProvider key={user.id} user={user}>{children}</SignedSongsProvider>:children;
+}
+export function useSongs(){
+ const songs=useContext(SongsContext);if(!songs)throw new Error('useSongs needs a signed-in SongsProvider.');return songs;
 }

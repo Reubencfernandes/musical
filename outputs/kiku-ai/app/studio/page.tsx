@@ -1,22 +1,9 @@
-'use client';
-import {useEffect,useState} from 'react';
-import dynamic from 'next/dynamic';
-import ThemeToggle from '@/components/ThemeToggle';
-import SignIn from '@/components/SignIn';
-import {useSession} from '@/components/shell/session';
-import '../studio.css';
+import type {Metadata} from 'next';
+import StudioScreen from '@/components/studio/StudioScreen';
+export const metadata:Metadata={title:'Studio'};
 
-// The studio is Web Audio from top to bottom, so it never renders on the server.
-const Studio=dynamic(()=>import('@/components/studio/Studio'),{ssr:false,
- loading:()=><div className="auth-loading"><span className="spinner"/></div>});
-
-export default function StudioPage(){
- const {user,ready,signOut}=useSession();
- // ?project= reopens a saved project, ?draft= one only this browser holds (after a refresh), and ?song= starts one from a library song.
- const [open,setOpen]=useState<{project?:string;song?:string;draft?:string}|null>(null);
- useEffect(()=>{const q=new URLSearchParams(location.search);setOpen({project:q.get('project')||undefined,song:q.get('song')||undefined,draft:q.get('draft')||undefined});},[]);
- if(!ready||!open)return <div className="auth-loading"><span className="spinner"/></div>;
- if(!user)return <><ThemeToggle/><SignIn title={<>Your voice.<br/>Your band.</>}
-  blurb="Record a take, build a band that follows it, and reshape any part of your song with AI."/></>;
- return <Studio user={user} signOut={signOut} open={open}/>;
+export default async function StudioPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
+ const params=await searchParams;
+ const value=(name:string)=>typeof params[name]==='string'?params[name] as string:undefined;
+ return <StudioScreen open={{project:value('project'),song:value('song'),draft:value('draft')}}/>;
 }

@@ -182,8 +182,7 @@ export function useJobs({player,buffers,project,playhead,commit,signedOut,pause}
   },{kind:'restyle',params});
  };
  const rewrite=(selection:Selection,options:{style:string;variance:number;lyrics:string;model:Model;meta?:Meta})=>{
-  // ACE-Step 1.5 repaints regions of 3 to 90 seconds.
-  const snapshot=project(),target=options.model==='ace15'?check(targetOf(snapshot,selection),3,90):check(targetOf(snapshot,selection),1),from=Math.min(...target.clips.map(c=>c.start)),to=Math.max(...target.clips.map(clipEnd));
+  const snapshot=project(),target=check(targetOf(snapshot,selection),1),from=Math.min(...target.clips.map(c=>c.start)),to=Math.max(...target.clips.map(clipEnd));
   let lo=Math.max(from,target.start-8),hi=Math.min(to,target.end+8);if(hi-lo<3){lo=Math.max(0,Math.min(lo,target.end-3));hi=Math.max(hi,lo+3);}if(hi-lo>MAX)throw new Error('Select four minutes or less.');
   const params:Params['rewrite']={target:spot(target),model:options.model,style:options.style,from:target.start-lo,to:target.end-lo,was:wasOf(snapshot)};
   run('Rewrite · '+modelLabel(options.model),target.start,target.end,target.tracks,async(signal,status,progress,job)=>{

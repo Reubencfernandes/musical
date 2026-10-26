@@ -2,7 +2,6 @@
 import dynamic from 'next/dynamic';
 import {useState} from 'react';
 import {writeScore,type ScoreDocument} from '@/lib/studio/score';
-import '../../studio.css';
 
 // Development only: the piano roll on a short sample melody, for checking its look and playback.
 const ScoreEditor=dynamic(()=>import('@/components/studio/ScoreEditor'),{ssr:false});

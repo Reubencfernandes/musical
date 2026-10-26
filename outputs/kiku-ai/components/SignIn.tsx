@@ -1,30 +1,32 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {ArrowUpRight,Music2} from 'lucide-react';
-type Copy={title?:React.ReactNode;blurb?:string};
-export default function SignIn({title=<>Your music.<br/>Written down.</>,blurb='Turn your audio recordings into a score you can play, edit, and make your own.'}:Copy={}){
+import {startSignIn} from '@/lib/sign-in';
+import {useSession} from '@/components/shell/session';
+/** `next` is the page sign-in returns to; it defaults to this one. */
+type Copy={title?:React.ReactNode;blurb?:string;next?:string};
+export default function SignIn({title=<>Your music.<br/>Written down.</>,blurb='Turn your audio recordings into a score you can play, edit, and make your own.',next}:Copy={}){
  const [retry,setRetry]=useState(false),[embedded,setEmbedded]=useState(true),[waiting,setWaiting]=useState(false),[login,setLogin]=useState('/auth/login');
+ const [blocked,setBlocked]=useState(false),{refresh}=useSession();
+ // A browser that blocks third-party cookies keeps the popup's session from this
+ // embedded page until the page is given storage access.
+ useEffect(()=>{if(window.self!==window.top)document.hasStorageAccess?.().then(has=>setBlocked(!has),()=>{});},[]);
+ async function allowAccess(){
+  try{await document.requestStorageAccess();setBlocked(false);}catch{}
+  refresh();
+ }
  // Come back to the page sign-in started from; the server only honours known pages.
  useEffect(()=>{setRetry(new URLSearchParams(location.search).get('signIn')==='retry');setEmbedded(window.self!==window.top);
-  if(location.pathname!=='/')setLogin('/auth/login?next='+encodeURIComponent(location.pathname));},[]);
+  const back=next??location.pathname;setLogin(back!=='/'?'/auth/login?next='+encodeURIComponent(back):'/auth/login');},[next]);
  useEffect(()=>{
   if(typeof BroadcastChannel==='undefined')return;
   const channel=new BroadcastChannel('kiku-auth');
   channel.onmessage=event=>{if(event.data!=='signed-in')setWaiting(false);};
   return()=>channel.close();
  },[]);
- // Viewed at huggingface.co the app sits in an iframe whose sandbox omits
- // allow-top-navigation, and Hugging Face sends X-Frame-Options on its OAuth
- // page. Signing in without leaving this page is therefore impossible; a popup
- // that closes itself is the closest the embed policy allows. Opened directly
- // at the Space's own domain the link is an ordinary same-page navigation.
  function signIn(event:React.MouseEvent<HTMLAnchorElement>){
-  if(!embedded)return;
   event.preventDefault();
-  const popup=window.open('/auth/login?popup=1','kiku-sign-in',
-   'width=520,height=730,menubar=no,toolbar=no');
-  if(popup){setWaiting(true);popup.focus();}
-  else window.open(login,'_blank','noopener');
+  setWaiting(startSignIn(next));
  }
  return <section className="sign-in-view view-enter">
   <div className="sign-in-content">
@@ -36,6 +38,9 @@ export default function SignIn({title=<>Your music.<br/>Written down.</>,blurb='
    {embedded&&<p className="sign-in-tab-note">{waiting
     ?'Finish signing in through the pop-up window. This page updates by itself.'
     :'Hugging Face opens sign-in in a small window, then brings you straight back here.'}</p>}
+   {embedded&&blocked&&waiting&&<p className="sign-in-tab-note">Signed in, but this page still asks? Your browser keeps
+    embedded pages apart. <button type="button" className="link-button" onClick={allowAccess}>Continue here</button> or{' '}
+    <a href="/" target="_blank" rel="noopener noreferrer">open Kiku AI in its own tab</a>.</p>}
    {retry&&<p className="error-message" role="alert">Sign-in didn’t complete. Please try again.</p>}
   </div>
  </section>;

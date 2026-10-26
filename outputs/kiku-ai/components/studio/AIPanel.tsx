@@ -43,9 +43,9 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
  const read=sheet?.sig===sig?sheet:null,canExtend=!!target?.sole&&!target.range;
  const current=action==='extend'&&!canExtend?'restyle':action;
  const task:Task|null=target?(current==='stems'||current==='score'?null:current):create.kind;
- const model=task?(read&&!target&&create.kind!=='part'?'yue2':modelFor(task,picked??PREFERRED[task]??'ace15')):'ace15';
+ const model:Model=task?(read&&!target&&create.kind!=='part'?'yue2':modelFor(task,picked??PREFERRED[task]??SUPPORTS[task][0])):'ace1';
  // Only models that can do the chosen job are offered; a score the user edited can only be played by YuE2.
- const modelOptions=useMemo<ComposerOption[]>(()=>task?MODELS.filter(m=>m.id!=='ace1'&&SUPPORTS[task].includes(m.id)
+ const modelOptions=useMemo<ComposerOption[]>(()=>task?MODELS.filter(m=>SUPPORTS[task].includes(m.id)
   &&!(read&&m.id!=='yue2'&&!target&&create.kind!=='part')).map(m=>({value:m.id,label:m.label,
   description:m.id==='yue2'?'Plan and perform melodies, chords and sections':'Generate parts and edit audio directly',icon:m.id==='yue2'?Music2:AudioWaveform,color:m.id==='yue2'?'#b9a2d9':'#e7a887'}))
   :[{value:current,label:current==='score'?'SheetSage2':'Demucs'}],[task,current,read,target,create.kind]);
@@ -81,7 +81,7 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
  const reshaping=!!target&&(current==='restyle'||current==='rewrite');
  const sung=(!target&&create.kind==='song')||(!!target&&current==='cover'&&mode==='sing')||reshaping&&voice==='new';
  /**
-  * ACE-Step's language model turns the short description into a full caption.
+  * The engine's writer (Qwen3-4B) turns the short description into a full style prompt.
   * With a selection it listens first, so the tempo, key and metre come from the
   * recording; restyle and rewrite then send them along.
   */

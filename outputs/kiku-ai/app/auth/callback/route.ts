@@ -36,8 +36,11 @@ export async function GET(req:Request){
   const age=Math.min(tokens.expires_in,28800);
   const granted=typeof tokens.scope==='string'?tokens.scope.split(/\s+/):[];
   const handle=typeof user.preferred_username==='string'?user.preferred_username.slice(0,100):undefined;
+  // Only Hugging Face's own image hosts, so the page never loads a picture from elsewhere.
+  const avatar=typeof user.picture==='string'&&/^https:\/\/(cdn-avatars\.huggingface\.co|huggingface\.co)\//.test(user.picture)&&user.picture.length<500?user.picture:undefined;
   jar.set(SESSION_COOKIE,seal({token:tokens.access_token,expires:Date.now()+age*1000,storage:granted.includes('write-repos')||!!flow.storage&&!granted.length,
-   user:{id:user.sub,name:String(user.preferred_username||user.name||'Musician').slice(0,100),handle}}),cookieOptions(age));
+   user:{id:user.sub,name:String(user.preferred_username||user.name||'Musician').slice(0,100),handle,avatar,
+   fullname:typeof user.name==='string'&&user.name.trim()?user.name.trim().slice(0,100):undefined}}),cookieOptions(age));
   return flow.popup?closePopup(true):NextResponse.redirect(appOrigin()+back,{headers:{'Cache-Control':'no-store'}});
  }catch{return failure();}
 }

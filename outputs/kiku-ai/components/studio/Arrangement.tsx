@@ -3,6 +3,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Trash2,Volume2,VolumeX,Plus,AudioWaveform,Download,Check,X,TriangleAlert} from 'lucide-react';
 import Waveform from './Waveform';
 import JobWaveform from './JobWaveform';
+import {WAVE_WINDOW,waveformWindow} from '@/lib/studio/waveform';
 import {type Clip,type Project,type Range,type Selection,type Track,MIN_CLIP,clipEnd,heard,projectEnd,showsMute,snap,takeAnchor} from '@/lib/studio/model';
 import type {Job} from './useJobs';
 
@@ -37,6 +38,7 @@ export default function Arrangement(props:Props){
  // Follow the playhead unless the user has scrolled away from it; it resumes once the playhead is back in view.
  const follow=useRef(true),autoScroll=useRef(false);
  const [view,setView]=useState(900),[viewHeight,setViewHeight]=useState(600),[headerWidth,setHeaderWidth]=useState(HEADER);
+ const [viewLeft,setViewLeft]=useState(0);
  const [clipMenu,setClipMenu]=useState<{id:string;x:number;y:number}|null>(null);
  const menuRef=useRef<HTMLDivElement>(null);
  const menuClip=clipMenu?project.clips.find(c=>c.id===clipMenu.id):undefined;
@@ -102,6 +104,15 @@ export default function Arrangement(props:Props){
    setHeaderWidth(header);setView(element.clientWidth-header);setViewHeight(element.clientHeight);
   });observer.observe(element);
   return()=>observer.disconnect();
+ },[]);
+
+ useEffect(()=>{
+  const element=scroller.current;if(!element)return;
+  let frame=0;
+  const update=()=>{frame=0;setViewLeft(Math.floor(element.scrollLeft/WAVE_WINDOW)*WAVE_WINDOW);};
+  const scroll=()=>{if(!frame)frame=requestAnimationFrame(update);};
+  element.addEventListener('scroll',scroll,{passive:true});update();
+  return()=>{element.removeEventListener('scroll',scroll);cancelAnimationFrame(frame);};
  },[]);
 
  // The playhead moves every frame, so it is positioned directly rather than through React.
@@ -293,6 +304,7 @@ useEffect(()=>{
      {project.clips.map(clip=>{
       const row=rowOf.get(clip.trackId);if(row===undefined)return null;
       const track=tracks[index.get(clip.trackId)!],chosen=selection.clips.includes(clip.id),w=Math.max(2,clip.duration*zoom);
+      const window=waveformWindow(clip.start*zoom,w,viewLeft,view);
       return <div key={clip.id} data-clip={clip.id} tabIndex={0} role="button" aria-label={clip.name} aria-haspopup="menu"
        title="Right-click for download options"
        onContextMenu={event=>{event.preventDefault();event.stopPropagation();openClipMenu(clip,event.clientX,event.clientY);}}
@@ -306,7 +318,7 @@ useEffect(()=>{
        style={{left:clip.start*zoom,top:row*LANE+2,width:w,height:LANE-4,['--clip' as string]:track.color}}>
        <div className="clip-head">{clip.name}</div>
        <Waveform buffer={buffers.get(clip.buffer)} offset={clip.offset} duration={clip.duration}
-        width={w} height={LANE-26} color="rgba(0,0,0,.58)"/>
+        width={w} height={LANE-4} color="#111f19" viewStart={window.start} viewWidth={window.width}/>
        {tool==='pointer'&&<><i className="clip-edge" data-edge="left"/><i className="clip-edge right" data-edge="right"/></>}
       </div>;
      })}
@@ -315,7 +327,7 @@ useEffect(()=>{
       return <i key={id} className="range-box" style={{left:range.start*zoom,width:(range.end-range.start)*zoom,top:row*LANE,height:LANE}}/>;
      })}
      {rows.map((row,i)=>'job' in row&&<JobLane key={row.job.id} job={row.job} now={now} left={row.job.start*zoom} top={i*LANE+2}
-      width={Math.max(24,(row.job.end-row.job.start)*zoom)} height={LANE-4}/>)}
+      width={Math.max(24,(row.job.end-row.job.start)*zoom)} height={LANE-4} viewLeft={viewLeft} viewWidth={view}/>)}
      {!tracks.length&&<div className="arr-empty" style={{width:headerWidth<HEADER?view+headerWidth:view,left:headerWidth<HEADER?-headerWidth:0}}>{props.empty}</div>}
      <i className="playhead" ref={head} style={{height:lanesHeight}}/>
     </div>
@@ -366,10 +378,11 @@ function JobHeader({job,now,cancel}:{job:Job;now:number;cancel:()=>void}){
  * Where a result will land. Dots morph on a fixed grid and brighten as the job
  * advances. Models write the whole piece at once, so this is a placeholder.
  */
-function JobLane({job,now,left,top,width,height}:{job:Job;now:number;left:number;top:number;width:number;height:number}){
+function JobLane({job,now,left,top,width,height,viewLeft,viewWidth}:{job:Job;now:number;left:number;top:number;width:number;height:number;viewLeft:number;viewWidth:number}){
  const done=shown(job,now);
+ const window=waveformWindow(left,width,viewLeft,viewWidth);
  return <div className="job-lane" style={{left,top,width,height}} aria-hidden="true">
-  <JobWaveform seed={job.id} progress={done} width={width} height={height-22}/>
+  <JobWaveform seed={job.id} progress={done} width={width} height={height-22} viewStart={window.start} viewWidth={window.width}/>
   <span className="job-lane-label">{job.label} · {Math.round(done*100)}%</span>
  </div>;
 }

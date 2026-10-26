@@ -5,6 +5,7 @@ import type {Project} from '@/lib/studio/model';
 import type {Meta} from '@/lib/jobs';
 import type {ScoreTiming} from '@/lib/types';
 import {clearCovers} from '@/lib/song-covers';
+import {forgetShared} from '@/lib/shared';
 
 /**
  * Each user's library: a private dataset in their own Hugging Face account,
@@ -25,7 +26,10 @@ export const LIBRARY='kiku-ai-library';
 export class NeedsStorage extends Error{constructor(){super('Allow Kiku AI to save to your Hugging Face account.');}}
 
 export type Song={id:string;title:string;caption:string;lyrics:string;instrumental:boolean;model:string;seed?:number;duration:number;createdAt:string;meta?:Meta;idea?:string;
- cover?:{model:'carlofkl/DreamLite-base';license:'CC-BY-NC-4.0';seed?:number};
+ /** The model that painted the artwork: DreamLite on older songs, Z-Image Turbo since. */
+ cover?:{model:string;license:string;seed?:number};
+ /** Shared on Explore, from the user's public kiku-ai-shared dataset (lib/shared). */
+ public?:boolean;
  /** The audio's path when it is not songs/<id>.mp3 (songs saved by the Flutter app). */
  audio?:string};
 export type SavedProject={id:string;name:string;createdAt:string;updatedAt:string;duration:number;tracks:number;project:Project;
@@ -50,7 +54,7 @@ async function account(){
  return me.catch(error=>{me=null;throw error;});
 }
 /** Forget the cached account, after the user signs in again with more permissions. */
-export function refreshAccount(){me=null;ready=null;clearCovers();}
+export function refreshAccount(){me=null;ready=null;clearCovers();forgetShared();}
 
 const status=(error:unknown)=>Number((error as {statusCode?:number})?.statusCode)||0;
 let ready:Promise<RepoId>|null=null;
@@ -101,8 +105,8 @@ const LIMIT=60;
 
 /** Persist metadata, never page-only audio/image blobs or UI state. */
 function songJson(song:Song){
- const {id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio}=song;
- return json({id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio});
+ const {id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio,public:shared}=song;
+ return json({id,title,caption,lyrics,instrumental,model,seed,duration,createdAt,meta,idea,cover,audio,public:shared});
 }
 const songWrites=new Map<string,Promise<unknown>>();
 function writeSong<T>(id:string,work:()=>Promise<T>):Promise<T>{
@@ -135,6 +139,11 @@ export async function deleteSong(song:Song){await writeSong(song.id,async()=>{
 export async function renameSong(song:Song,title:string){await writeSong(song.id,async()=>{
  const current=await loadSong(song.id);if(!current)return;
  await upload([{path:`songs/${song.id}.json`,content:songJson({...current,title})}],'Rename song: '+title);
+});}
+/** Note in the library whether the song is shared on Explore. */
+export async function markSongPublic(song:Song,shared:boolean){await writeSong(song.id,async()=>{
+ const current=await loadSong(song.id);if(!current)return;
+ await upload([{path:`songs/${song.id}.json`,content:songJson({...current,public:shared||undefined})}],(shared?'Share song: ':'Unshare song: ')+current.title);
 });}
 
 /**

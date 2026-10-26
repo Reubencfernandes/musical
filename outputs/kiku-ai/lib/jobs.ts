@@ -6,8 +6,8 @@ import type {CoverResult,Download,LyricsResult,PartResult,ScoreRead,ScoreResult,
  * Every engine job the app runs: which Space serves it, how the request is
  * checked and turned into the endpoint's arguments, and how the reply is read.
  *
- * ACE-Step 1.5 and YuE2 run on private Modal GPUs through /api/modal/jobs. The browser
- * calls the remaining Hugging Face engines itself (see lib/studio/engine.ts).
+ * YuE2-Turbo runs on a private Modal GPU through /api/modal/jobs. The browser
+ * calls the Hugging Face engines itself (see lib/studio/engine.ts).
  * Hugging Face
  * rate-limits Spaces by the caller's address, and this app's Docker Space shares
  * its outgoing address with other Spaces, so calls made from the server were
@@ -17,15 +17,12 @@ export type Engine={space:string;origin:string};
 export const ENGINE:Engine={
  space:process.env.NEXT_PUBLIC_HF_ENGINE_SPACE||'Reubencf/Kiku-Engine',
  origin:process.env.NEXT_PUBLIC_HF_ENGINE_ORIGIN||'https://reubencf-kiku-engine.hf.space'};
-/**
- * Identifies ACE-Step 1.5 jobs. The client dispatches these to the authenticated
- * Modal server route; this legacy Space origin is not used for their inference.
- */
-export const ACE15:Engine={
- space:process.env.NEXT_PUBLIC_HF_ACE15_SPACE||'Reubencf/Kiku-ACE-Step-15',
- origin:process.env.NEXT_PUBLIC_HF_ACE15_ORIGIN||'https://reubencf-kiku-ace-step-15.hf.space'};
 export const YUE2:Engine={space:'Modal YuE2',origin:'https://konkanillm--kiku-yue2-engine-web.modal.run'};
-export const engineOf=(model:Model)=>model==='ace15'?ACE15:model==='yue2'?YUE2:ENGINE;
+/** Song artwork: Z-Image Turbo on its own ZeroGPU Space, called with the user's token like the engine. */
+export const ART:Engine={
+ space:process.env.NEXT_PUBLIC_HF_ART_SPACE||'Reubencf/Kiku-Art',
+ origin:process.env.NEXT_PUBLIC_HF_ART_ORIGIN||'https://reubencf-kiku-art.hf.space'};
+export const engineOf=(model:Model)=>model==='yue2'?YUE2:ENGINE;
 
 /** Resolve a Gradio file payload, refusing anything not served by that Space. */
 export function asFile(engine:Engine,value:unknown):Download|undefined{
@@ -111,18 +108,14 @@ export type Spec={
  build:(input:Input,model:Model)=>{error:string}|{args:(audio:unknown)=>unknown[]};
  shape:(data:unknown[],file:Files,model:Model)=>unknown;
 };
-const LABEL:Record<Model,string>={ace15:'ACE-Step 1.5',ace1:'ACE-Step 1',yue2:'YuE2'};
+const LABEL:Record<Model,string>={ace1:'ACE-Step',yue2:'YuE2-Turbo'};
 const VOICES=new Set(['sing','play']),HARMONY=new Set(['keep','free']);
 const PARTS=new Set(['drums','bass','keys','guitar','strings','synth','band']),MODES=new Set(['full','melody','off']);
 const audioOnly=(data:unknown[],file:Files)=>({status:String(data[0]??''),audio:file(data[1])});
-/** Restyle and rewrite on ACE-Step 1.5 also report whether the new music was locked to the source's beat. */
+/** Restyle and rewrite may also report whether the new music was locked to the source's beat. */
 const onBeat=(data:unknown[],file:Files)=>({...audioOnly(data,file),report:json(data[2])});
-/**
- * Tempo, key and metre measured from the audio, for ACE-Step 1.5. Left out, its
- * DiT sees "bpm: N/A"; only measured values are sent, never the studio's defaults.
- */
+/** Tempo, key and metre: planned by the writer, or measured from the audio when `measured`. */
 export type Meta={bpm?:number;keyscale?:string;timesignature?:string;language?:string;duration?:number;measured?:boolean};
-const meta=(input:Input)=>{const raw=text(input,'meta');if(raw.length>2000)return '';try{const v=JSON.parse(raw);return v&&typeof v==='object'?JSON.stringify(v):'';}catch{return '';}};
 
 export const JOBS:Record<string,Spec>={
  /** Restyle a clip or selection, keeping its structure while the prompt changes its sound. */
@@ -133,8 +126,7 @@ export const JOBS:Record<string,Spec>={
   // The engine's strength is how closely to keep the source; the studio asks how much to change.
   // Rounded because 1-0.9 is 0.09999999999999998, which the engine's 0.1 minimum rejects.
   const strength=Math.round((1-num(input,'change',0.5,0.1,0.9))*100)/100;
-  const args=(audio:unknown)=>[audio,style,lyrics,strength,num(input,'steps',60,20,120),seed(input)];
-  return {args:model==='ace15'?audio=>[...args(audio),meta(input)]:args};
+  return {args:audio=>[audio,style,lyrics,strength,num(input,'steps',60,20,120),seed(input)]};
  },shape:onBeat},
  /**
   * Rewrite one stretch of audio in context. The studio sends the selection with
@@ -145,8 +137,7 @@ export const JOBS:Record<string,Spec>={
   const start=num(input,'start',0,0,240),end=num(input,'end',0,0,240);
   if(end-start<1)return {error:'Select at least one second to rewrite.'};
   if(tooLong(style,lyrics))return {error:tooLong(style,lyrics)};
-  const args=(audio:unknown)=>[audio,style,lyrics,start,end,num(input,'variance',0.5,0.1,1),num(input,'steps',60,20,120),seed(input)];
-  return {args:model==='ace15'?audio=>[...args(audio),meta(input)]:args};
+  return {args:audio=>[audio,style,lyrics,start,end,num(input,'variance',0.5,0.1,1),num(input,'steps',60,20,120),seed(input)]};
  },shape:onBeat},
  /** Continue a clip past its end. The result holds the original followed by the new music. */
  extend:{endpoint:'/extend',limits:{min:3,max:200},build(input){
@@ -196,8 +187,8 @@ export const JOBS:Record<string,Spec>={
    return {abc:data[5],status:String(data[0]),downloads:Array.isArray(data[4])?data[4].map(file).filter((d):d is Download=>!!d):[],
     pdf:file(data[2])?.url,audio:file(data[3])?.url,timing:timing(data[6])} as ScoreResult;
   }},
- /** A full song with vocals from a style prompt and lyrics, with YuE2 or ACE-Step 1.5. */
- song:{endpoint:'/song',models:['yue2','ace15'],audio:'none',waiting:'Waiting for a GPU. Songs are queued one at a time…',build(input,model){
+ /** A full song with vocals from a style prompt and lyrics, sung by YuE2-Turbo. */
+ song:{endpoint:'/song',models:['yue2'],audio:'none',waiting:'Waiting for a GPU. Songs are queued one at a time…',build(input,model){
   const style=text(input,'style'),lyrics=text(input,'lyrics');let abc=text(input,'abc');
   const cot=MODES.has(text(input,'cot'))?text(input,'cot'):'full';
   if(!style)return {error:'Describe the style you want.'};
@@ -205,15 +196,11 @@ export const JOBS:Record<string,Spec>={
   if(style.length>2000||lyrics.length>8000||abc.length>60000)return {error:'That is longer than the engine accepts. Shorten it and try again.'};
   if(cot==='melody'&&!abc)return {error:'Melody planning needs a score. Transcribe a recording first.'};
   if(abc){try{abc=writeScore(readScore(abc));}catch(e){return {error:(e as Error).message};}}
-  if(abc&&model!=='yue2')return {error:'Edited scores are rendered by YuE2. Choose YuE2 to use this score.'};
-  // -1 lets ACE-Step's language model choose a length that fits the lyrics.
-  if(model==='ace15')return {args:()=>[style,lyrics,num(input,'duration',-1,-1,600),seed(input),meta(input)]};
   return {args:()=>[style,lyrics,cot,seed(input),abc]};
- },shape:(data,file,model)=>model==='ace15'?{status:String(data[0]??''),audio:file(data[1]),abc:''} as SongResult
-  :{status:String(data[0]??''),audio:file(data[1]),artifacts:file(data[2]),abc:typeof data[3]==='string'?data[3]:'',
-   seed:Number(data[4]),report:json(data[5])} as SongResult},
+ },shape:(data,file)=>({status:String(data[0]??''),audio:file(data[1]),artifacts:file(data[2]),abc:typeof data[3]==='string'?data[3]:'',
+   seed:Number(data[4]),report:json(data[5])}) as SongResult},
  /** A backing track or instrumental from a style prompt, or YuE2 playing a score. */
- instrumental:{endpoint:model=>model==='yue2'?'/score_instrumental':'/instrumental',models:['ace15','yue2','ace1'],audio:'none',build(input,model){
+ instrumental:{endpoint:model=>model==='yue2'?'/score_instrumental':'/instrumental',models:['yue2','ace1'],audio:'none',build(input,model){
   const style=text(input,'style'),lyrics=text(input,'lyrics');let abc=text(input,'abc');
   if(!style)return {error:'Describe the music you want.'};
   if(style.length>2000||lyrics.length>8000||abc.length>200000)return {error:'That is longer than the engine accepts.'};
@@ -227,23 +214,29 @@ export const JOBS:Record<string,Spec>={
  },shape:(data,file,model)=>model==='yue2'?{status:String(data[0]??''),audio:file(data[1]),abc:String(data[2]??''),seed:Number(data[3]),report:json(data[4])}
   :{status:String(data[0]??''),audio:file(data[1]),abc:''}},
  /**
-  * Expand a short description into a full caption with ACE-Step's language model.
-  * Restyle and rewrite skip that model, so this is the only way their prompt gets
-  * fleshed out. With audio, it also reads the selection's tempo, key and metre.
+  * Expand a short description into a full style prompt with the engine's writer
+  * (Qwen3-4B). With audio, it also measures the selection's tempo and key.
   */
- enhance:{endpoint:'/enhance',fixed:ACE15,audio:'optional',limits:{min:3,max:240},build(input){
+ enhance:{endpoint:'/enhance',fixed:ENGINE,audio:'optional',limits:{min:3,max:240},build(input){
   const caption=text(input,'caption'),lyrics=text(input,'lyrics');
   if(!caption)return {error:'Describe the sound first, then enhance it.'};
   if(tooLong(caption,lyrics))return {error:tooLong(caption,lyrics)};
   return {args:audio=>[audio,caption,lyrics]};
  },shape:data=>({status:String(data[0]??''),caption:String(data[1]??''),meta:(json(data[2])||{}) as Meta})},
- /** Simple mode: ACE-Step's language model writes a caption, lyrics and metadata from a one-line idea. */
- sample:{endpoint:'/sample',fixed:ACE15,audio:'none',build(input){
+ /** Simple mode: the engine's writer (Qwen3-4B) writes a style, lyrics, tempo and key from a one-line idea. */
+ sample:{endpoint:'/sample',fixed:ENGINE,audio:'none',build(input){
   const query=text(input,'query');
   if(!query)return {error:'Describe the song you want.'};
   if(query.length>512)return {error:'Keep the idea under 500 characters.'};
   return {args:()=>[query,text(input,'instrumental')==='true',text(input,'language')]};
  },shape:data=>({status:String(data[0]??''),caption:String(data[1]??''),lyrics:String(data[2]??''),meta:(json(data[3])||{}) as Meta})},
+ /** A song's cover art from its title and style. The Space keeps the title out of the picture's lettering. */
+ art:{endpoint:'/cover',fixed:ART,audio:'none',waiting:'Waiting for a GPU to paint the cover…',build(input){
+  const title=text(input,'title'),style=text(input,'style');
+  if(!style)return {error:'Describe the song before painting its cover.'};
+  if(title.length>80||style.length>2000)return {error:'That title or style is too long for a cover.'};
+  return {args:()=>[title,style,seed(input)]};
+ },shape:(data,file)=>({image:file(data[0]),seed:Number(data[1])||undefined})},
  /** YuE2 drafts a score from a prompt and lyrics, for the user to edit before it is performed. */
  plan:{endpoint:'/plan_score',models:['yue2'],audio:'none',waiting:'Waiting for a GPU to write your score…',build(input){
   const style=text(input,'style'),lyrics=text(input,'lyrics'),instrumental=input instanceof FormData?text(input,'instrumental')==='true':!!input.instrumental;
@@ -257,8 +250,8 @@ export type Job=keyof typeof JOBS;
 /** The Space and model a request runs on, refusing a model that cannot do the job rather than quietly running another. */
 export function route(spec:Spec,input:Input):{engine:Engine;model:Model}|{error:string}{
  if(spec.fixed)return {engine:spec.fixed,model:'ace1'};
- const allowed=spec.models||['ace15','ace1'],named=field(input,'model');
- const model=named?modelOf(named):allowed[0];
+ const allowed=spec.models||['ace1'],named=field(input,'model');
+ const model=(named?modelOf(named):null)??allowed[0];
  if(!allowed.includes(model))return {error:`${LABEL[model]} cannot do this. Choose ${allowed.map(m=>LABEL[m]).join(' or ')}.`};
  return {engine:engineOf(model),model};
 }

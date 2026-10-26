@@ -1,3 +1,4 @@
+import 'server-only';
 import './server-tls';
 import {createCipheriv,createDecipheriv,randomBytes,createHash} from 'node:crypto';
 import {cookies} from 'next/headers';
@@ -18,10 +19,11 @@ export function clientId(){
  * permission to create and write repos, asked for the first time they save.
  */
 export const SCOPES={base:'openid profile',storage:'openid profile read-repos write-repos manage-repos'};
-type Session={token:string;expires:number;user:{id:string;name:string;handle?:string};storage?:boolean};
+/** `avatar` is the Hugging Face profile picture, shown instead of an initial; `fullname` the name on the profile. */
+type Session={token:string;expires:number;user:{id:string;name:string;handle?:string;avatar?:string;fullname?:string};storage?:boolean};
 export type OAuthFlow={state:string;verifier:string;expires:number;popup?:boolean;next?:string;storage?:boolean};
 /** Pages sign-in may return to. A fixed list, so the parameter can never become an open redirect. */
-const RETURNS=new Set(['/','/score','/studio','/generate','/library']);
+const RETURNS=new Set(['/','/score','/studio','/generate','/library','/home']);
 export const returnPath=(value:string|null)=>value&&RETURNS.has(value)?value:'/';
 const devGlobal=globalThis as typeof globalThis & {kikuSessionKey?:Buffer};
 function key(){
@@ -48,7 +50,16 @@ export function appOrigin(){
  if(!configured&&process.env.NODE_ENV==='production')throw new Error('APP_ORIGIN is required.');
  return new URL(configured||'http://localhost:3000').origin;
 }
-export function cookieOptions(maxAge:number){return {httpOnly:true,secure:appOrigin().startsWith('https:'),sameSite:'lax' as const,path:'/',maxAge};}
+/**
+ * On huggingface.co the app runs in an iframe from another site, where browsers
+ * only send SameSite=None cookies. Requests that change anything are still
+ * checked against the app's origin in authorize(), and the token route takes
+ * same-origin requests only. Plain-http local runs cannot use None, so keep Lax.
+ */
+export function cookieOptions(maxAge:number){
+ const secure=appOrigin().startsWith('https:');
+ return {httpOnly:true,secure,sameSite:secure?'none' as const:'lax' as const,path:'/',maxAge};
+}
 export async function session(){
  const value=unseal<Session>((await cookies()).get(SESSION_COOKIE)?.value);
  return value&&typeof value.token==='string'&&value.expires>Date.now()&&value.user?.id?value:null;

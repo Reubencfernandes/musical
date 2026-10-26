@@ -10,7 +10,8 @@ models:
   - m-a-p/SheetSage2
   - m-a-p/YuE2-3B
   - ACE-Step/ACE-Step-v1-3.5B
-  - carlofkl/DreamLite-base
+  - Tongyi-MAI/Z-Image-Turbo
+  - HeartMuLa/HeartTranscriptor-oss
 tags:
   - audio-to-score
   - music-generation
@@ -20,16 +21,25 @@ tags:
 
 # Kiku AI
 
+The web app uses **Next.js App Router, React, TypeScript and Tailwind CSS 4**.
+See [web architecture](docs/web-architecture.md) for styling conventions, shared
+layouts, session handling and manual review notes.
+
 Record or upload a take, turn it into editable notation, and build a full song
-around it. Sign in with Hugging Face. ACE-Step 1.5 and YuE2 run on private Modal L40S GPUs;
-standalone transcription, lyrics and stems use your Hugging Face ZeroGPU allowance.
+around it. YuE2-Turbo runs on a private Modal L40S GPU; ACE-Step audio edits,
+transcription, lyrics, song ideas, stems and cover art use your Hugging Face ZeroGPU allowance.
+
+The Space opens on **Explore** (`/`): a prompt box and the songs people have shared. Anyone
+can look around and listen without an account; typing an idea and pressing Enter (or Create)
+asks them to sign in with Hugging Face and then carries the idea on to Generate. **Home**
+(`/home`) links to Generate, Studio and Score and lists your latest songs.
 
 ## What it does
 
 **Sheet music** (`/score`) turns a recording into a lead sheet you can play with a
 moving note highlight, edit, undo, restore and download as ABC, MIDI or PDF.
 
-**Studio** (`/`, the page the Space opens on; `/studio` and `/create` redirect there) is a small multitrack DAW: tracks of audio
+**Studio** (`/studio`) is a small multitrack DAW: tracks of audio
 clips on a timeline, a transport with loop and recording, a mixer with per-track volume, pan,
 mute, solo and meters, undo, and WAV export. Clips move, trim, split and duplicate on a beat grid.
 
@@ -47,11 +57,11 @@ Kiku AI works on whatever is selected:
   strings, synth or a full band — written to the project's beat and chords and isolated to that
   instrument, or generates an instrumental or a song with (synthetic) vocals at the playhead.
 
-Each AI action has a model picker: **ACE-Step 1.5** (the default), **YuE2** or **ACE-Step 1**.
-Models that cannot do the selected job are greyed out. YuE2 generates songs and
-score-based instrumentals, covers and accompaniment. With ACE-Step 1.5, a band is written by its *complete* task directly around
-the vocal, and a single instrument by its *lego* task directly into the project. ACE-Step 1
-builds a guide track from the measured beat and chords instead. Stems are always Demucs.
+Each AI action offers the models that can do it: **YuE2-Turbo** for songs, score-based
+instrumentals, covers and accompaniment, and **ACE-Step** (1) for editing audio in place:
+restyle, rewrite, extend and new parts. ACE-Step builds a guide track from the measured beat
+and chords for bands. Stems are always Demucs. ACE-Step 1.5 is no longer used; songs made
+with it keep its name.
 
 Several jobs can run while you keep editing; each result is placed against the project as it is
 when the job finishes.
@@ -75,29 +85,37 @@ fail there) is at http://localhost:3000/preview/studio.
 
 ## Hosting
 
-The frontend runs on a CPU Docker Space. ACE-Step 1.5 and YuE2 use private Modal
-L40S backends through authenticated server routes. Other jobs run in the
+The frontend runs on a CPU Docker Space. YuE2-Turbo uses a private Modal L40S
+backend through authenticated server routes. Other jobs run in the
 Gradio ZeroGPU engine, called with the signed-in user's own token:
 
 | Space | Used for |
 | --- | --- |
-| [Kiku-Engine](https://huggingface.co/spaces/Reubencf/Kiku-Engine) | Transcription (SheetSage2), ACE-Step 1 editing and guide-track bands, standalone lyrics and Demucs stems |
-| [Modal kiku-acestep15](https://modal.com/apps/konkanillm/main/deployed/kiku-acestep15) | ACE-Step 1.5: songs, instrumentals, restyle, rewrite, extend, parts, bands, prompt enhancement and planning |
-| [Modal kiku-yue2](https://modal.com/apps/konkanillm/main/deployed/kiku-yue2) | YuE2 songs, score-based instrumentals, score planning, covers and accompaniment |
-| [Modal kiku-dreamlite](https://modal.com/apps/konkanillm/main/deployed/kiku-dreamlite) | DreamLite-base song artwork for this non-commercial deployment |
+| [Kiku-Engine](https://huggingface.co/spaces/Reubencf/Kiku-Engine) | Transcription (SheetSage2), ACE-Step 1 editing and guide-track bands, lyrics with section tags (HeartTranscriptor), song ideas and Enhance (Qwen3-4B-Instruct), Demucs stems, and YuE2-Turbo for the Flutter app |
+| [Modal kiku-yue2](https://modal.com/apps/konkanillm/main/deployed/kiku-yue2) | YuE2-Turbo (YuE2 with its AR stage on vLLM) songs, score-based instrumentals, score planning, covers and accompaniment |
+| [Kiku-Art](https://huggingface.co/spaces/Reubencf/Kiku-Art) | Z-Image Turbo song artwork (ZeroGPU), on each user's own token |
 
-Generate offers ACE-Step 1.5 or YuE2 in both Simple and Custom. Simple mode uses
-the ACE-Step planner to write the style and lyrics, then the chosen model creates
-the audio.
+Generate has three modes, all sung by YuE2-Turbo. Simple has a small open language model
+(Qwen3-4B-Instruct, Apache 2.0, on the engine's ZeroGPU) write the style and lyrics from one
+line; Custom takes your own. Get lyrics marks the sections it hears: [verse], [chorus],
+[bridge], [intro], [inst] and [outro].
+**Cover** takes a dropped song (its first five minutes) and has YuE2-Turbo perform its melody
+and chords in a new style. **Get lyrics** transcribes the song's words with
+HeartTranscriptor so they can be checked or rewritten first; left empty, the cover sings the
+song's own words. With Instrumental on, the melody is played instead of sung.
 
-New songs receive DreamLite-base artwork generated on a private Modal L40S GPU.
-The audio is ready first; artwork failure retains the existing gradient thumbnail.
-Covers appear in Generate, Library, Home and the player, and are saved as WebP
-alongside the audio in the user's private Hugging Face dataset.
+New songs receive artwork from [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
+(Apache 2.0) on the Kiku-Art ZeroGPU Space, which the browser calls with the signed-in user's
+token (the `art` job). The title is passed only as a lowercase theme and the lyrics not at all,
+because Z-Image paints any words it is given. The audio is ready first; artwork failure keeps the gradient thumbnail.
+Covers are saved as WebP alongside the audio in the user's private dataset. Songs made before
+this keep their DreamLite-base artwork.
 
-This deployment is non-commercial. DreamLite-base by carlofkl is used under
-[CC BY-NC 4.0](https://huggingface.co/carlofkl/DreamLite-base); its model identity,
-license and generation seed are recorded with each generated cover.
+Every song can show its lyrics and style, and can be made **public** or private. Public songs
+are copied to a public dataset in the user's own account, `<username>/kiku-ai-shared`
+(`index.json` plus each song's MP3 and artwork), which Explore finds through Hugging Face's
+dataset search. Explore shows who made each song (their Hugging Face name and picture, linked to
+their profile). Making a song private again deletes its files and squashes that dataset's history.
 
 Each Modal backend retains CPU memory snapshots, zero minimum workers, one
 maximum L40S worker, and the existing 120-second idle window. Its proxy token
@@ -112,17 +130,15 @@ Before deploying, configure these Space settings:
 - Variable `APP_ORIGIN`: `https://reubencf-kiku-ai.hf.space`.
 - Variable `MODAL_ENGINE_ORIGIN`: `https://konkanillm--kiku-acestep15-engine-web.modal.run`.
 - Variable `MODAL_YUE2_ORIGIN`: `https://konkanillm--kiku-yue2-engine-web.modal.run`.
-- Variable `MODAL_COVER_ORIGIN`: `https://konkanillm--kiku-dreamlite-artwork-web.modal.run`.
 - Secrets `MODAL_PROXY_KEY` and `MODAL_PROXY_SECRET`: a Modal proxy token pair.
 - Optional `NEXT_PUBLIC_HF_*_SPACE` and `NEXT_PUBLIC_HF_*_ORIGIN` overrides for each engine, read at build time; see `env.example`.
 
 The app publishes its own OAuth client as a Client ID Metadata Document at
 `/oauth/client`; set the Space variable `HF_OAUTH_CLIENT_ID` to
 `https://reubencf-kiku-ai.hf.space/oauth/client` (locally the engine's older client is used).
-Sign-in uses authorization code with PKCE and asks only for `openid profile`. The first
-time a user saves, the app asks again for `read-repos write-repos manage-repos` so it can
-keep their songs, studio projects and scores in a private dataset in their own account,
-`<username>/kiku-ai-library`. No owner Hugging Face token is required or used.
+Sign-in uses authorization code with PKCE and asks for `openid profile read-repos write-repos
+manage-repos`, so it can keep songs, studio projects and scores in a private dataset in the
+user's own account, `<username>/kiku-ai-library`, and share songs from `<username>/kiku-ai-shared`. No owner Hugging Face token is required or used.
 
 User access tokens are encrypted in HttpOnly cookies and expire within eight hours. The
 browser calls the engine Spaces and the Hub itself, so `/api/auth/token` hands the
@@ -151,7 +167,7 @@ Audio for transcription must be 5 seconds to 10 minutes and under 100 MB. Audio 
 from the studio must be 3 seconds to 4 minutes (stem splits up to 6 minutes). The whole recording is
 validated and submitted; longer input is rejected, not silently truncated.
 
-ACE-Step 1.5 and YuE2 generation use Modal and do not consume the user's
+YuE2-Turbo generation uses Modal and does not consume the user's
 Hugging Face ZeroGPU allowance. Remaining ZeroGPU jobs use that user's allowance.
 Each Modal model has one GPU worker and queues inference requests.
 

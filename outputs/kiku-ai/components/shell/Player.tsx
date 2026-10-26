@@ -3,8 +3,8 @@ import {createContext,useCallback,useContext,useEffect,useRef,useState} from 're
 import {Pause,Play,Volume2,VolumeX} from 'lucide-react';
 import SongArt from '@/components/songs/SongArt';
 
-/** Something the bottom player can play. `load` fetches the audio only when it is first played. */
-export type Playable={id:string;title:string;subtitle?:string;cover?:boolean;load:()=>Promise<string>};
+/** Something the bottom player can play. `load` fetches the audio only when it is first played; `art` is a public song's artwork. */
+export type Playable={id:string;title:string;subtitle?:string;cover?:boolean;art?:string;load:()=>Promise<string>};
 type PlayerState={current:Playable|null;playing:boolean;loading:boolean;error:string;play:(item:Playable)=>void;stop:()=>void};
 const Context=createContext<PlayerState|null>(null);
 export const usePlayer=()=>{const value=useContext(Context);if(!value)throw new Error('usePlayer needs a PlayerProvider.');return value;};
@@ -15,7 +15,11 @@ const clock=(s:number)=>Number.isFinite(s)?`${Math.floor(s/60)}:${String(Math.fl
 export function PlayerProvider({children}:{children:React.ReactNode}){
  const audio=useRef<HTMLAudioElement>(null),request=useRef(0);
  const [current,setCurrent]=useState<Playable|null>(null),[playing,setPlaying]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');
- const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[volume,setVolume]=useState(0.9),[muted,setMuted]=useState(false);
+ const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[volume,setVolume]=useState(1),[muted,setMuted]=useState(false);
+ useEffect(()=>{
+  const element=audio.current;
+  return()=>{request.current++;element?.pause();element?.removeAttribute('src');element?.load();};
+ },[]);
  const play=useCallback((item:Playable)=>{
   const element=audio.current;if(!element)return;
   if(current?.id===item.id&&element.src){if(element.paused)void element.play();else element.pause();return;}
@@ -31,7 +35,7 @@ export function PlayerProvider({children}:{children:React.ReactNode}){
   <audio ref={audio} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)}
    onTimeUpdate={e=>setTime(e.currentTarget.currentTime)} onDurationChange={e=>setDuration(e.currentTarget.duration)}/>
   <footer className={'player'+(current?'':' idle')} aria-label="Player">
-   <div className="player-now">{current?<><SongArt id={current.id} size={40} cover={current.cover}/><div><strong>{current.title}</strong><span>{error||current.subtitle||''}</span></div></>:<span className="player-hint">Pick a song to play it here.</span>}</div>
+   <div className="player-now">{current?<><SongArt id={current.id} size={40} cover={current.cover} src={current.art}/><div><strong>{current.title}</strong><span>{error||current.subtitle||''}</span></div></>:<span className="player-hint">Pick a song to play it here.</span>}</div>
    <div className="player-controls">
     <button className="player-play" disabled={!current} onClick={()=>current&&play(current)} aria-label={playing?'Pause':'Play'}>{loading?<span className="spinner"/>:playing?<Pause size={17} fill="currentColor"/>:<Play size={17} fill="currentColor"/>}</button>
     <span className="player-time">{clock(time)}</span>

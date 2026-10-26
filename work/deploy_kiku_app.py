@@ -49,13 +49,12 @@ VARIABLES = {
     "HF_ENGINE_SPACE": "Reubencf/Kiku-Engine",
     "HF_ENGINE_ORIGIN": "https://reubencf-kiku-engine.hf.space",
     "HF_OAUTH_CLIENT_ID": ORIGIN + "/oauth/client",
-    # ACE-Step 1.5 runs on its own Space; the studio lets users pick it or YuE2.
-    "HF_ACE15_SPACE": "Reubencf/Kiku-ACE-Step-15",
-    "HF_ACE15_ORIGIN": "https://reubencf-kiku-ace-step-15.hf.space",
     # Private Modal GPUs (their API credentials are Space secrets, set by hand).
+    # ACE-Step 1.5 is no longer offered; its origin stays only so downloads of
+    # results made before that keep working for their 24 hours.
     "MODAL_ENGINE_ORIGIN": "https://konkanillm--kiku-acestep15-engine-web.modal.run",
     "MODAL_YUE2_ORIGIN": "https://konkanillm--kiku-yue2-engine-web.modal.run",
-    "MODAL_COVER_ORIGIN": "https://konkanillm--kiku-dreamlite-artwork-web.modal.run",
+    # Cover art comes from the Kiku-Art ZeroGPU Space, called from the browser.
 }
 IGNORE = ["node_modules/*", ".next/*", ".env*", "*.tsbuildinfo", "__pycache__/*",
           "*.pyc", ".git/*"]
