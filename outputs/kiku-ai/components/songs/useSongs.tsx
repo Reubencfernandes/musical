@@ -6,7 +6,7 @@ import {type Creator,publishSong,unpublishSong,updateShared} from '@/lib/shared'
 import {all,put,remove as forget} from '@/lib/local';
 import {cachedCover,generateCover,publishCover,forgetCover} from '@/lib/song-covers';
 import {toMp3} from '@/lib/mp3';
-import type {Meta} from '@/lib/jobs';
+import type {Controls,Meta} from '@/lib/jobs';
 import type {Model} from '@/lib/studio/models';
 import type {CoverResult,SongResult} from '@/lib/types';
 import type {User} from '@/components/shell/session';
@@ -15,7 +15,8 @@ import type {User} from '@/components/shell/session';
 export type Item=Song&{local?:Blob;localCover?:Blob;saved:boolean};
 /** A song being made: drives a progress row like the studio's job lanes. */
 export type Making={id:string;title:string;status:string;began:number;running:number|null;progress:number|null;etaAt:number|null;queue:number|null;error?:string};
-export type Request=
+/** `controls` is YuE2's temperature and guidance, when the user changed them. */
+export type Request={controls?:Controls}&(
  |{mode:'simple';idea:string;instrumental:boolean;model?:Model}
  |{mode:'custom';caption:string;lyrics:string;instrumental:boolean;model:Model;duration:number|null;meta?:Meta}
  /**
@@ -23,7 +24,7 @@ export type Request=
   * empty lyrics mean the song's own words, which the engine transcribes. Playing (not
   * singing) the melody makes an instrumental.
   */
- |{mode:'cover';title:string;audio:Blob;style:string;lyrics:string;instrumental:boolean;harmony?:'keep'|'free'};
+ |{mode:'cover';title:string;audio:Blob;style:string;lyrics:string;instrumental:boolean;harmony?:'keep'|'free'});
 /** The caption and lyrics a song is sung from: written by the engine's writer in simple mode, or the user's own. */
 type Idea={caption:string;lyrics:string;meta?:Meta;model:Model;duration:number|null};
 /**
@@ -111,7 +112,8 @@ function useSongStore(user:User){
     // The tune and, unless lyrics were given, the words come from the uploaded song.
     idea={caption:request.style,lyrics:'',model:'yue2',duration:null};instrumental=request.instrumental;
     const form=new FormData();form.append('audio',new File([request.audio],'song.wav',{type:'audio/wav'}));
-    const fields={style:request.style,lyrics:instrumental?'':request.lyrics,voice:instrumental?'play':'sing',harmony:request.harmony??'keep',model:'yue2',seed:'-1'};
+    const fields={style:request.style,lyrics:instrumental?'':request.lyrics,voice:instrumental?'play':'sing',harmony:request.harmony??'keep',model:'yue2',seed:'-1',
+     temperature:String(request.controls?.temperature??1),cfg:String(request.controls?.cfg??1)};
     for(const [key,value] of Object.entries(fields))form.append(key,value);
     const cover=record.server?await resumeJob<CoverResult>(record.server,call):await runJob<CoverResult>('cover',form,call);
     idea.lyrics=instrumental?'':(cover.lyrics||request.lyrics).trim();result=cover;
@@ -130,8 +132,8 @@ function useSongStore(user:User){
     const {caption,lyrics,meta,model,duration}=idea;
     instrumental=request.instrumental||!lyrics.trim();
     result=record.server?await resumeJob<SongResult>(record.server,call):instrumental
-     ?await runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1},call)
-     :await runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{})},call);
+     ?await runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1,...request.controls},call)
+     :await runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{}),...request.controls},call);
    }
    const {caption,lyrics,meta,model}=idea;
    if(!result.audio)throw new Error('The engine did not return the song.');

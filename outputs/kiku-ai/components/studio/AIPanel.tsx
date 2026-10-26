@@ -8,7 +8,8 @@ import ScoreEditor,{sheetFromAbc,emptySheet} from './ScoreEditor';
 import ComposerSelect,{type ComposerOption} from './ComposerSelect';
 import StrengthSlider from './StrengthSlider';
 import PromptHelper from './PromptHelper';
-import {type Meta} from '@/lib/jobs';
+import {type Controls,type Meta,DEFAULT_CONTROLS} from '@/lib/jobs';
+import YuE2Controls from '@/components/songs/YuE2Controls';
 import {SignedOut,runJob} from '@/lib/studio/engine';
 import {MODELS,PREFERRED,SUPPORTS,modelFor,type Model,type Task} from '@/lib/studio/models';
 export type Create={kind:'part';instrument:string;label:string}|{kind:'instrumental'}|{kind:'song'};
@@ -31,7 +32,7 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
  const [prompt,setPrompt]=useState(''),[lyricsBySelection,setLyricsBySelection]=useState<Record<string,string>>({}),[error,setError]=useState('');
  const [picked,setPicked]=useState<Model|null>(null),[sheet,setSheet]=useState<Sheet|null>(null),[editor,setEditor]=useState<Sheet|null>(null);
  const [menu,setMenu]=useState<Menu>(null),[editorLocked,setEditorLocked]=useState(false);
- const [restyleStrength,setRestyleStrength]=useState(50);
+ const [restyleStrength,setRestyleStrength]=useState(50),[controls,setControls]=useState<Controls>(DEFAULT_CONTROLS);
  const [measured,setMeasured]=useState<Record<string,Meta>>({}),[enhancing,setEnhancing]=useState(false);
  // Restyle and rewrite keep the recorded voice (the engine lifts it off, changes the music
  // and lays it back on the beat), or let ACE-Step sing the part again from new lyrics.
@@ -72,7 +73,7 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
   }catch(e){setError((e as Error).message);}
  }
  function plan(){
-  setError('');try{jobs.plan({style,lyrics,instrumental:create.kind==='instrumental'},result=>{
+  setError('');try{jobs.plan({style,lyrics,instrumental:create.kind==='instrumental',controls},result=>{
    const next=sheetFromAbc(result.abc,sig,lyrics,[],result.report?.seed);setSheet(next);openEditor(next,false);
   });}catch(e){setError((e as Error).message);}
  }
@@ -109,16 +110,18 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
    if(target){
     if(current==='restyle'){if(!style)throw new Error('Describe the sound you want.');jobs.restyle(selection,{style,change:restyleStrength/100,lyrics:sungLyrics(),model,meta:known});}
     if(current==='rewrite')jobs.rewrite(selection,{style,variance:0.5,lyrics:sungLyrics(),model,meta:known});
-    if(current==='cover'){if(!style)throw new Error('Describe the style for the cover.');jobs.cover(selection,{style,voice:mode,harmony,score,lyrics:read?.lyrics||lyrics});}
+    if(current==='cover'){if(!style)throw new Error('Describe the style for the cover.');jobs.cover(selection,{style,voice:mode,harmony,score,lyrics:read?.lyrics||lyrics,controls});}
     if(current==='score')readSelection();
     if(current==='stems')jobs.stems(selection);
     if(current==='extend')jobs.extend(selection,{style,seconds:20,lyrics:'',model});
    }else if(create.kind==='part')jobs.part({instrument:create.instrument,label:create.label,style,follow:hasAudio,duration:30,strength:0.45,model});
-   else jobs.generate({kind:create.kind,style,lyrics:read?.lyrics||lyrics,duration:30,model,score,seed:read?.seed});
+   else jobs.generate({kind:create.kind,style,lyrics:read?.lyrics||lyrics,duration:30,model,score,seed:read?.seed,controls:model==='yue2'?controls:undefined});
   }catch(e){setError((e as Error).message);}
  }
  const modeActive=!!target&&current==='cover';
  const scoreActive=target?['cover','score'].includes(current):create.kind!=='part'&&model==='yue2';
+ // Covers, and songs or instrumentals YuE2 makes, take its temperature and guidance.
+ const sampling=target?current==='cover':create.kind!=='part'&&model==='yue2';
  const caption=target?current==='cover'?mode==='play'?'YuE2 performs the melody on instruments.':'YuE2 creates new vocals and instruments.':current==='score'?'Review the transcription before changing the music.'
    :reshaping?voice==='keep'?'Your voice stays. The music under it changes and is locked to your beat.':'ACE-Step sings this part again in a new voice, using your lyrics.'
    :'A new take appears for you to audition.'
@@ -154,6 +157,7 @@ export default function AIPanel({project,selection,create,jobs,download,close,ad
    </div>}
    {(modeActive||!target&&create.kind==='instrumental')&&<div className="instrument-choice"><ComposerSelect label="Lead instrument" value={instrument} options={INSTRUMENTS} icon={Piano} open={menu==='instrument'} toggle={()=>setMenu(menu==='instrument'?null:'instrument')} close={closeMenu} change={setInstrument}/></div>}
    {((!target&&create.kind==='song')||(modeActive&&mode==='sing')||reshaping&&voice==='new')&&<label className="composer-prompt composer-lyrics"><span className="sr-only">Song lyrics</span><textarea aria-label="Song lyrics" value={read?.lyrics??lyrics} onChange={e=>{setLyrics(e.target.value);if(read)setSheet({...read,lyrics:e.target.value});}} rows={3} maxLength={8000} placeholder={reshaping?'Lyrics for this part. ACE-Step sings them in a new voice…':target?'Lyrics matching the recording’s sections (optional)…':'[verse]\nYour words…\n[chorus]'}/></label>}
+   {sampling&&<YuE2Controls value={controls} change={setControls}/>}
    {error&&<p className="ai-error" role="alert">{error}<button type="button" aria-label="Dismiss" onClick={()=>setError('')}><X size={13}/></button></p>}
    <div className="composer-footer"><span className="composer-caption">{target?target.range?(target.end-target.start).toFixed(1)+' s selected':target.clips.length+' selected clip'+(target.clips.length===1?'':'s'):create.kind==='part'?'Adding '+create.label.toLowerCase():create.kind==='song'?'Song with vocals':'New instrumental'}</span><div className="ai-actions">{target&&<details className="selection-download" onToggle={e=>{const menu=e.currentTarget;if(menu.open)setTimeout(()=>{const shut=(ev:PointerEvent)=>{if(!menu.contains(ev.target as Node)){menu.open=false;window.removeEventListener('pointerdown',shut);}};window.addEventListener('pointerdown',shut);},0);}}>
      <summary className="tool-button" aria-label="Download selection" title="Download selection"><Download size={14}/></summary>

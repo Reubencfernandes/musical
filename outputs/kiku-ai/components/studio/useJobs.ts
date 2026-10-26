@@ -6,7 +6,7 @@ import {type Progress,LEAVING,SignedOut,resumeJob,runJob,fetchResult,wavFile} fr
 import type {PendingJob} from '@/lib/studio/drafts';
 import type {Analysis,CoverResult,Download,GenerationReport,LyricsResult,PartResult,PlanResult,ScoreRead,SongResult,StemsResult} from '@/lib/types';
 import {type Model,modelLabel} from '@/lib/studio/models';
-import type {Meta} from '@/lib/jobs';
+import type {Controls,Meta} from '@/lib/jobs';
 import {readScore as parseScore,writeScore,scoreSeconds} from '@/lib/studio/score';
 
 /**
@@ -190,11 +190,12 @@ export function useJobs({player,buffers,project,playhead,commit,signedOut,pause}
    await finish.rewrite(await runJob<Edited>('repaint',form,{signal,status,progress,job}),params,signal);
   },{kind:'rewrite',params});
  };
- const cover=(selection:Selection,options:{style:string;lyrics:string;voice:'sing'|'play';harmony:'keep'|'free';score?:ScoreDraft})=>{
+ const cover=(selection:Selection,options:{style:string;lyrics:string;voice:'sing'|'play';harmony:'keep'|'free';score?:ScoreDraft;controls?:Controls})=>{
   const snapshot=project(),target=check(targetOf(snapshot,selection),3,SCORE_MAX);
   const params:Params['cover']={target:spot(target),style:options.style,voice:options.voice,clock:options.score?.clock,beats:options.score?.beats,was:wasOf(snapshot)};
   run('Cover · YuE2',target.start,target.end,target.tracks,async(signal,status,progress,job)=>{
    const form=new FormData();form.append('audio',wavFile(await render(snapshot,target)));form.append('model','yue2');form.append('style',options.style);form.append('lyrics',options.lyrics);form.append('voice',options.voice);form.append('harmony',options.harmony);addScore(form,options.score);
+   if(options.controls){form.append('temperature',String(options.controls.temperature));form.append('cfg',String(options.controls.cfg));}
    await finish.cover(await runJob<CoverResult>('cover',form,{signal,status,progress,job}),params,signal);
   },{kind:'cover',params});
  };
@@ -239,11 +240,11 @@ export function useJobs({player,buffers,project,playhead,commit,signedOut,pause}
    await finish.part(await runJob<PartResult>('part',form,{signal,status,progress,job}),params,signal);
   },{kind:'part',params});
  };
- const plan=(options:{style:string;lyrics:string;instrumental:boolean},done:(result:PlanResult)=>void)=>{
+ const plan=(options:{style:string;lyrics:string;instrumental:boolean;controls?:Controls},done:(result:PlanResult)=>void)=>{
   if(!options.style.trim())throw new Error('Describe the music first.');if(!options.instrumental&&!options.lyrics.trim())throw new Error('Add lyrics with section labels first.');
-  const at=playhead();run('Plan score · YuE2',at,at+30,[],async(signal,status,progress)=>{const result=await runJob<PlanResult>('plan',{...options,model:'yue2'},{signal,status,progress});parseScore(result.abc);if(result.report?.truncated)throw new Error('The draft was cut short. Try shorter lyrics.');if(!signal.aborted)done(result);});
+  const at=playhead();run('Plan score · YuE2',at,at+30,[],async(signal,status,progress)=>{const result=await runJob<PlanResult>('plan',{style:options.style,lyrics:options.lyrics,instrumental:options.instrumental,...options.controls,model:'yue2'},{signal,status,progress});parseScore(result.abc);if(result.report?.truncated)throw new Error('The draft was cut short. Try shorter lyrics.');if(!signal.aborted)done(result);});
  };
- const generate=(options:{kind:'instrumental'|'song';style:string;lyrics:string;duration:number;model:Model;score?:ScoreDraft;seed?:number})=>{
+ const generate=(options:{kind:'instrumental'|'song';style:string;lyrics:string;duration:number;model:Model;score?:ScoreDraft;seed?:number;controls?:Controls})=>{
   if(!options.style.trim())throw new Error('Describe the sound you want.');if(options.kind==='song'&&!options.lyrics.trim())throw new Error('Add lyrics, marked with [verse] and [chorus].');
   if(options.score&&options.model!=='yue2')throw new Error('Choose YuE2 to render an edited score.');
   const at=playhead(),snapshot=project();let abc=options.score?.abc;
@@ -251,8 +252,8 @@ export function useJobs({player,buffers,project,playhead,commit,signedOut,pause}
   const length=abc?scoreSeconds(parseScore(abc)):options.duration;
   const params:Params['generate']={at,kind:options.kind,model:options.model,style:options.style,lyrics:options.lyrics,abc,was:wasOf(snapshot)};
   run((options.kind==='song'?'Song':'Instrumental')+' · '+modelLabel(options.model),at,at+length,[],async(signal,status,progress,job)=>{
-   const result=options.kind==='song'?await runJob<SongResult>('song',{style:options.style,lyrics:options.lyrics,cot:'full',model:options.model,abc:abc||'',seed:options.seed??-1},{signal,status,progress,job})
-    :await runJob<SongResult>('instrumental',{style:options.style,lyrics:'',duration:options.duration,model:options.model,abc:abc||'',seed:options.seed??-1},{signal,status,progress,job});
+   const result=options.kind==='song'?await runJob<SongResult>('song',{style:options.style,lyrics:options.lyrics,cot:'full',model:options.model,abc:abc||'',seed:options.seed??-1,...options.controls},{signal,status,progress,job})
+    :await runJob<SongResult>('instrumental',{style:options.style,lyrics:'',duration:options.duration,model:options.model,abc:abc||'',seed:options.seed??-1,...options.controls},{signal,status,progress,job});
    await finish.generate(result,params,signal);
   },{kind:'generate',params});
  };

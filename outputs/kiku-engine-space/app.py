@@ -300,11 +300,48 @@ def transcribe(audio, start, duration, melody_only, piano, progress=gr.Progress(
 
 # -------------------------------------------------------------- songs (YuE2)
 
-def song_time(style, lyrics, cot, seed, abc, progress=None, **kwargs):
-    return max(90, min(420, 90 + int(len(lyrics or "") * 0.35))) + cold("yue2", YUE2_COLD)
+# What a user may ask of YuE2's sampling. Temperature scales both stages around
+# YuE2's own defaults (0.7 for planning the score, 1.0 for singing it), so 1
+# leaves the model as it is. Guidance (CFG) above 1 follows the style more
+# closely, but YuE2-Turbo's vLLM path cannot run the paired branches, so those
+# requests run on PyTorch and take about twice as long.
+TEMPERATURE = (0.5, 1.5)
+GUIDANCE = (1.0, 2.0)
 
 
-def _song(style, lyrics, cot, seed, abc, progress):
+def _clamp(value, low, high):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return 1.0 if number != number else min(high, max(low, number))
+
+
+def _sampling(temperature=None, guidance=None, planning_only=False):
+    """YuE2 keyword arguments for the user's temperature and guidance; none at the defaults."""
+    heat, cfg = _clamp(temperature, *TEMPERATURE), _clamp(guidance, *GUIDANCE)
+    found = {}
+    if heat != 1.0:
+        defaults = yue2().generation_config
+        found["abc_sampling"] = {"temperature": round(defaults.abc.temperature * heat, 3)}
+        if not planning_only:
+            found["semantic_sampling"] = {"temperature": round(defaults.semantic.temperature * heat, 3)}
+    if cfg != 1.0:
+        found["cfg_scale"] = round(cfg, 3)
+    return found
+
+
+def _slower(guidance):
+    """How much more GPU time a request needs: guidance leaves vLLM for PyTorch."""
+    return 2.2 if _clamp(guidance, *GUIDANCE) > 1.0 else 1.0
+
+
+def song_time(style, lyrics, cot, seed, abc, temperature=1.0, guidance=1.0, progress=None, **kwargs):
+    base = max(90, min(420, 90 + int(len(lyrics or "") * 0.35)))
+    return min(900, int(base * _slower(guidance))) + cold("yue2", YUE2_COLD)
+
+
+def _song(style, lyrics, cot, seed, abc, progress, temperature=None, guidance=None):
     if not (style or "").strip():
         raise gr.Error("Describe the style you want, for example 'dream pop, female vocal'.")
     if not (lyrics or "").strip():
@@ -319,7 +356,8 @@ def _song(style, lyrics, cot, seed, abc, progress):
         progress(0.05, desc="Planning melody and chords")
         chosen = int(seed) if seed not in (None, "", -1) else int.from_bytes(os.urandom(4), "big")
         song = yue2()(style=style.strip(), lyrics=lyrics.strip(), cot=cot, seed=chosen,
-                      **({"abc": abc.strip()} if (abc or "").strip() else {}))
+                      **({"abc": abc.strip()} if (abc or "").strip() else {}),
+                      **_sampling(temperature, guidance))
         progress(0.9, desc="Rendering audio")
         flac = job / "song.flac"
         song.save(str(flac))
@@ -342,8 +380,8 @@ def _song(style, lyrics, cot, seed, abc, progress):
 
 
 @spaces.GPU(duration=song_time)
-def song(style, lyrics, cot, seed, abc, progress=gr.Progress()):
-    return _song(style, lyrics, cot, seed, abc, progress)
+def song(style, lyrics, cot, seed, abc, temperature=1.0, guidance=1.0, progress=gr.Progress()):
+    return _song(style, lyrics, cot, seed, abc, progress, temperature, guidance)
 
 
 @spaces.GPU(duration=song_time)
@@ -362,8 +400,13 @@ def _generation_report(result, seed):
             "decoder": "m-a-p/YuE2-Vae", "backend": backend}
 
 
-@spaces.GPU(duration=lambda *args, **kwargs: 120 + cold("yue2", YUE2_COLD))
-def plan_score(style, lyrics, seed, instrumental=False, progress=gr.Progress()):
+def plan_time(style, lyrics, seed, instrumental=False, temperature=1.0, guidance=1.0, progress=None, **kwargs):
+    return int(120 * _slower(guidance)) + cold("yue2", YUE2_COLD)
+
+
+@spaces.GPU(duration=plan_time)
+def plan_score(style, lyrics, seed, instrumental=False, temperature=1.0, guidance=1.0,
+               progress=gr.Progress()):
     """Only the symbolic stage: return a reviewable score before synthesizing audio."""
     if not (style or "").strip():
         raise gr.Error("Describe the style for your musical draft.")
@@ -374,7 +417,8 @@ def plan_score(style, lyrics, seed, instrumental=False, progress=gr.Progress()):
         chosen = int(seed) if seed not in (None, "", -1) else int.from_bytes(os.urandom(4), "big")
         described = "Instrumental, " + style.strip() if instrumental else style.strip()
         progress(0.1, desc="Planning the melody, chords and sections")
-        plan = yue2().plan(style=described, lyrics=words, cot="full", seed=chosen)
+        plan = yue2().plan(style=described, lyrics=words, cot="full", seed=chosen,
+                           **_sampling(temperature, guidance, planning_only=True))
         if not plan.abc:
             raise gr.Error("YuE2 did not return a score. Try a shorter musical draft.")
         report = _generation_report(plan, chosen)
@@ -391,13 +435,14 @@ def plan_score(style, lyrics, seed, instrumental=False, progress=gr.Progress()):
         raise failed(exc)
 
 
-def score_instrumental(style, abc, duration, seed, progress=gr.Progress()):
+def score_instrumental(style, abc, duration, seed, temperature=1.0, guidance=1.0, progress=gr.Progress()):
     """Plan or use the edited score, then explicitly transfer melody into Ins."""
     if not (style or "").strip():
         raise gr.Error("Describe the instrumental sound you want.")
     try:
         if not (abc or "").strip():
-            _, abc, planned = plan_score("%s, around %d seconds" % (style, int(duration)), "", seed, True)
+            _, abc, planned = plan_score("%s, around %d seconds" % (style, int(duration)), "", seed, True,
+                                         temperature, guidance)
             seed = json.loads(planned)["seed"]
         score = scores.vocal_to_ins(scores.read(abc))
         if not score.ins and not score.chords:
@@ -406,7 +451,8 @@ def score_instrumental(style, abc, duration, seed, progress=gr.Progress()):
         prompt = "Instrumental, %s, %d BPM, %s." % (style.strip(), score.bpm, ", ".join(INSTRUMENTAL))
         progress(0.4, desc="Playing the reviewed instrumental score")
         path, _, report = _render_score(text, prompt, scores.lyric_tags(score),
-                                         "full" if score.chords else "melody", seed, strip_voice=True)
+                                         "full" if score.chords else "melody", seed, strip_voice=True,
+                                         temperature=temperature, guidance=guidance)
         return "Instrumental rendered from %d bars." % len(score.bars), path, text, report["seed"], json.dumps(report)
     except gr.Error:
         raise
@@ -913,9 +959,9 @@ def _read_take(audio, words=False, separate="auto", transcribe=True, sections=Fa
 
 
 def render_time(abc, style, lyrics, cot, seed, clock=None, span=0.0, strip_voice=False,
-                split_parts=False, beats=None, **kwargs):
+                split_parts=False, beats=None, temperature=None, guidance=None, **kwargs):
     seconds = min(MAX_SCORE, float(span or 0) or 60)
-    total = 45 + int(seconds * 0.9) + cold("yue2", YUE2_COLD)
+    total = int((45 + int(seconds * 0.9)) * _slower(guidance)) + cold("yue2", YUE2_COLD)
     if clock:
         total += 30 + int(seconds * 0.45) + cold("sheetsage", 90)
     if strip_voice or split_parts:
@@ -925,13 +971,13 @@ def render_time(abc, style, lyrics, cot, seed, clock=None, span=0.0, strip_voice
 
 @spaces.GPU(duration=render_time)
 def _render_score(abc, style, lyrics, cot, seed, clock=None, span=0.0, strip_voice=False,
-                  split_parts=False, beats=None):
+                  split_parts=False, beats=None, temperature=None, guidance=None):
     # `span` is the output length. It cannot be called `duration`: ZeroGPU reserves that keyword.
     """YuE2 plays the score; the result is then locked to `clock` when given."""
     import librosa
     job = job_dir()
     chosen = int(seed) if seed not in (None, "", -1) else int.from_bytes(os.urandom(4), "big")
-    song = yue2()(style=style, lyrics=lyrics, cot=cot, seed=chosen, abc=abc)
+    song = yue2()(style=style, lyrics=lyrics, cot=cot, seed=chosen, abc=abc, **_sampling(temperature, guidance))
     raw = job / "yue2.flac"
     song.save(str(raw))
     audio, sr = tools.load(str(raw))
@@ -1009,7 +1055,8 @@ def _prepare(audio, abc, clock, edits, words, separate, progress):
     return found, edited, bars, beats, duration
 
 
-def restage(audio, style, lyrics, voice, harmony, abc, clock, edits, seed, progress=gr.Progress()):
+def restage(audio, style, lyrics, voice, harmony, abc, clock, edits, seed, temperature=1.0, guidance=1.0,
+            progress=gr.Progress()):
     """Play a stretch's tune in a new style: sung by YuE2, or on an instrument."""
     guard(audio, "a recording")
     if voice not in VOICES or harmony not in HARMONY:
@@ -1042,7 +1089,8 @@ def restage(audio, style, lyrics, voice, harmony, abc, clock, edits, seed, progr
             prompt = "Instrumental, %s, %d BPM, %s." % (described, score.bpm, ", ".join(INSTRUMENTAL))
         progress(0.4, desc="YuE2 is playing it")
         path, _, report = _render_score(text, prompt, words, cot, seed, clock=clock, span=duration,
-                                        beats=beats, strip_voice=not sing)
+                                        beats=beats, strip_voice=not sing,
+                                        temperature=temperature, guidance=guidance)
         elapsed = round(time.monotonic() - started)
         status = "Finished in %dm %ds / %s / %d BPM" % (elapsed // 60, elapsed % 60,
                                                           scores.key_words(score.bars[0].key), score.bpm)
@@ -1313,6 +1361,8 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         s_cot = gr.Radio(COT, value="full", label="Planning")
         s_abc = gr.Code(label="ABC score (optional)", language=None)
         s_seed = gr.Number(value=-1, label="Seed", precision=0)
+        s_temperature = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Temperature")
+        s_guidance = gr.Slider(1.0, 2.0, value=1.0, step=0.1, label="Guidance (CFG); above 1 runs slower")
         s_run = gr.Button("Generate song", variant="primary")
         s_status = gr.Textbox(label="Status")
         s_audio = gr.Audio(label="Song", type="filepath")
@@ -1321,7 +1371,7 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         s_used = gr.Number(label="Seed used", precision=0)
         s_report = gr.Code(label="Generation report", language="json")
         song_out = [s_status, s_audio, s_artifacts, s_plan, s_used, s_report]
-        s_run.click(song, [s_style, s_lyrics, s_cot, s_seed, s_abc], song_out,
+        s_run.click(song, [s_style, s_lyrics, s_cot, s_seed, s_abc, s_temperature, s_guidance], song_out,
                     api_name="song", concurrency_limit=1)
 
     with gr.Tab("Cover a recording"):
@@ -1358,17 +1408,19 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         q_lyrics = gr.Textbox(label="Lyrics with sections", lines=6)
         q_seed = gr.Number(value=-1, label="Seed", precision=0)
         q_instrumental = gr.Checkbox(value=False, label="Instrumental draft")
+        q_temperature = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Temperature")
+        q_guidance = gr.Slider(1.0, 2.0, value=1.0, step=0.1, label="Guidance (CFG); above 1 runs slower")
         q_plan = gr.Button("Plan score")
         q_status = gr.Textbox(label="Status")
         q_abc = gr.Code(label="Editable native ABC", language=None)
         q_report = gr.Code(label="Generation report", language="json")
-        q_plan.click(plan_score, [q_style, q_lyrics, q_seed, q_instrumental],
+        q_plan.click(plan_score, [q_style, q_lyrics, q_seed, q_instrumental, q_temperature, q_guidance],
                      [q_status, q_abc, q_report], api_name="plan_score", concurrency_limit=1)
         q_duration = gr.Number(value=30, label="Target seconds when planning from scratch")
         q_play = gr.Button("Render instrumental")
         q_audio = gr.Audio(label="Instrumental", type="filepath")
         q_used = gr.Number(label="Seed used", precision=0)
-        q_play.click(score_instrumental, [q_style, q_abc, q_duration, q_seed],
+        q_play.click(score_instrumental, [q_style, q_abc, q_duration, q_seed, q_temperature, q_guidance],
                      [q_status, q_audio, q_abc, q_used, q_report], api_name="score_instrumental", concurrency_limit=1)
 
     with gr.Tab("Reshape"):
@@ -1453,6 +1505,8 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         k_clock = gr.Textbox(label="Bar start times for that score, JSON (optional)")
         k_edits = gr.Textbox(label="Edits, JSON: transpose, bpm, chords by bar (optional)")
         k_seed = gr.Number(value=-1, label="Seed", precision=0)
+        k_temperature = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Temperature")
+        k_guidance = gr.Slider(1.0, 2.0, value=1.0, step=0.1, label="Guidance (CFG); above 1 runs slower")
         with gr.Row():
             k_read = gr.Button("Read the score")
             k_words = gr.Button("Read the words")
@@ -1471,7 +1525,8 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         k_words.click(lyrics_of, [k_audio], [k_status, k_words_used], api_name="lyrics",
                       concurrency_limit=1)
         k_run.click(restage, [k_audio, k_style, k_lyrics, k_voice, k_harmony, k_abc, k_clock, k_edits,
-                              k_seed], [k_status, k_out, k_used, k_words_used, k_prompt, k_report],
+                              k_seed, k_temperature, k_guidance],
+                    [k_status, k_out, k_used, k_words_used, k_prompt, k_report],
                     api_name="restage", concurrency_limit=1)
         b_sep = gr.Radio(SEPARATE, value="auto", visible=False)
         b_balance = gr.Number(value=-3, visible=False)

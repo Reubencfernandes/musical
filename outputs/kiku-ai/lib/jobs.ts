@@ -65,6 +65,14 @@ export function num(input:Input,name:string,fallback:number,min:number,max:numbe
 }
 export function text(input:Input,name:string){const value=field(input,name);return typeof value==='string'?value.trim():typeof value==='number'||typeof value==='boolean'?String(value):'';}
 export function seed(input:Input){return num(input,'seed',-1,-1,2**31-1);}
+/**
+ * YuE2's sampling as the user set it. Temperature scales YuE2's own (1 keeps
+ * them); guidance (CFG) above 1 follows the style more closely, but takes YuE2-Turbo
+ * off its fast vLLM path, so it runs about twice as long. The engine clamps both too.
+ */
+export type Controls={temperature:number;cfg:number};
+export const DEFAULT_CONTROLS:Controls={temperature:1,cfg:1};
+const controls=(input:Input)=>[num(input,'temperature',1,0.5,1.5),num(input,'cfg',1,1,2)];
 /** Style prompts and lyrics share the engine's limits. */
 export function tooLong(style:string,lyrics=''){
  return style.length>2000||lyrics.length>8000?'That is longer than the engine accepts. Shorten it and try again.':'';
@@ -159,7 +167,7 @@ export const JOBS:Record<string,Spec>={
   if(!VOICES.has(voice)||!HARMONY.has(harmony))return {error:'Choose how the melody is performed.'};
   const score=scoreFields(input);
   if('error' in score)return score;
-  return {args:audio=>[audio,style,lyrics,voice,harmony,score.abc,score.clock,score.edits,seed(input)]};
+  return {args:audio=>[audio,style,lyrics,voice,harmony,score.abc,score.clock,score.edits,seed(input),...controls(input)]};
  },shape:(data,file)=>({status:String(data[0]??''),audio:file(data[1]),abc:String(data[2]??''),
   lyrics:String(data[3]??''),prompt:String(data[4]??''),report:json(data[5])}) as CoverResult},
  /** Write one instrument's part, following the project mix when one is attached. */
@@ -197,7 +205,7 @@ export const JOBS:Record<string,Spec>={
   if(style.length>2000||lyrics.length>8000||abc.length>60000)return {error:'That is longer than the engine accepts. Shorten it and try again.'};
   if(cot==='melody'&&!abc)return {error:'Melody planning needs a score. Transcribe a recording first.'};
   if(abc){try{abc=writeScore(readScore(abc));}catch(e){return {error:(e as Error).message};}}
-  return {args:()=>[style,lyrics,cot,seed(input),abc]};
+  return {args:()=>[style,lyrics,cot,seed(input),abc,...controls(input)]};
  },shape:(data,file)=>({status:String(data[0]??''),audio:file(data[1]),artifacts:file(data[2]),abc:typeof data[3]==='string'?data[3]:'',
    seed:Number(data[4]),report:json(data[5])}) as SongResult},
  /** A backing track or instrumental from a style prompt, or YuE2 playing a score. */
@@ -208,7 +216,7 @@ export const JOBS:Record<string,Spec>={
   const duration=num(input,'duration',60,10,240);
   if(model==='yue2'){
    if(abc){try{abc=writeScore(readScore(abc));}catch(e){return {error:(e as Error).message};}}
-   return {args:()=>[style,abc,duration,seed(input)]};
+   return {args:()=>[style,abc,duration,seed(input),...controls(input)]};
   }
   if(abc)return {error:'Edited scores are rendered by YuE2. Choose YuE2 to use this score.'};
   return {args:()=>[style,lyrics,duration,num(input,'steps',60,20,120),num(input,'guidance',15,3,25),seed(input)]};
@@ -243,7 +251,7 @@ export const JOBS:Record<string,Spec>={
   const style=text(input,'style'),lyrics=text(input,'lyrics'),instrumental=input instanceof FormData?text(input,'instrumental')==='true':!!input.instrumental;
   if(!style||style.length>2000||lyrics.length>8000||!instrumental&&!lyrics)
    return {error:!style?'Describe the style first.':!instrumental&&!lyrics?'Add lyrics before planning a song.':'Shorten the prompt or lyrics.'};
-  return {args:()=>[style,lyrics,seed(input),instrumental]};
+  return {args:()=>[style,lyrics,seed(input),instrumental,...controls(input)]};
  },shape:data=>({status:String(data[0]??''),abc:String(data[1]??''),report:json(data[2])})},
 };
 export type Job=keyof typeof JOBS;

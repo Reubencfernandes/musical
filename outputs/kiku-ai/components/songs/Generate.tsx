@@ -6,10 +6,11 @@ import AnimatedHeight from '@/components/AnimatedHeight';
 import {SongSkeletons} from '@/components/Skeleton';
 import {MakingRow,SongRow} from './SongList';
 import CoverSource,{type Source} from './CoverSource';
+import YuE2Controls from './YuE2Controls';
 import {type Request,useSongs} from './useSongs';
 import {allowSaving} from '@/lib/library';
 import {runJob} from '@/lib/studio/engine';
-import type {Meta} from '@/lib/jobs';
+import {type Controls,type Meta,DEFAULT_CONTROLS} from '@/lib/jobs';
 import type {LyricsResult} from '@/lib/types';
 import type {User} from '@/components/shell/session';
 import RequireSession from '@/components/shell/RequireSession';
@@ -31,7 +32,7 @@ export default function Generate({user}:{user:User}){
  const [now,setNow]=useState(()=>Date.now());
  // Cover mode: the dropped song, the new style, and its words once read (empty sings the song's own).
  const [source,setSource]=useState<Source|null>(null),[style,setStyle]=useState(''),[words,setWords]=useState(''),[listening,setListening]=useState('');
- const [harmony,setHarmony]=useState<'keep'|'free'>('keep');
+ const [harmony,setHarmony]=useState<'keep'|'free'>('keep'),[controls,setControls]=useState<Controls>(DEFAULT_CONTROLS);
  const listen=useRef<AbortController|null>(null);
  useEffect(()=>()=>listen.current?.abort(),[]);
  const lyricsBox=useRef<HTMLTextAreaElement>(null),started=useRef(false);
@@ -72,15 +73,15 @@ export default function Generate({user}:{user:User}){
  function create(event:React.FormEvent){
   event.preventDefault();setError('');
   let request:Request;
-  if(mode==='simple'){if(!idea.trim()){setError('Describe the song you want to make.');return;}request={mode,idea:idea.trim(),instrumental,model:MODEL};}
+  if(mode==='simple'){if(!idea.trim()){setError('Describe the song you want to make.');return;}request={mode,idea:idea.trim(),instrumental,model:MODEL,controls};}
   else if(mode==='cover'){
    if(!source){setError('Drop the song you want to cover.');return;}
    if(!style.trim()){setError('Describe the new style: genre, mood, instruments, voice.');return;}
-   request={mode,title:`${source.name} (cover)`.slice(0,60),audio:source.wav,style:style.trim(),lyrics:words.trim(),instrumental,harmony};
+   request={mode,title:`${source.name} (cover)`.slice(0,60),audio:source.wav,style:style.trim(),lyrics:words.trim(),instrumental,harmony,controls};
   }else{
    if(!caption.trim()){setError('Describe the style: genre, mood, instruments, texture.');return;}
    if(!instrumental&&!lyrics.trim()){setError('Add lyrics, or switch on Instrumental.');return;}
-   request={mode,caption:caption.trim(),lyrics:lyrics.trim(),instrumental,model:MODEL,duration:instrumental&&length||null,meta};
+   request={mode,caption:caption.trim(),lyrics:lyrics.trim(),instrumental,model:MODEL,duration:instrumental&&length||null,meta,controls};
   }
   songs.create(request);
  }
@@ -139,6 +140,7 @@ export default function Generate({user}:{user:User}){
       {LENGTHS.map(l=><option key={l.value} value={l.value}>{l.label}</option>)}</select></label>
     </div>}
    </div></AnimatedHeight>
+   <YuE2Controls value={controls} change={setControls}/>
    <label className="gen-switch"><input type="checkbox" checked={instrumental} onChange={e=>setInstrumental(e.target.checked)}/><span>Instrumental</span></label>
    {error&&<p className="gen-error" role="alert">{error}</p>}
    <button type="submit" className="gen-create"><AudioLines size={17}/> Create</button>
