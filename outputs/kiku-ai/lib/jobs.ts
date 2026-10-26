@@ -6,7 +6,8 @@ import type {CoverResult,Download,LyricsResult,PartResult,ScoreRead,ScoreResult,
  * Every engine job the app runs: which Space serves it, how the request is
  * checked and turned into the endpoint's arguments, and how the reply is read.
  *
- * YuE2-Turbo runs on a private Modal GPU through /api/modal/jobs. The browser
+ * YuE2-Turbo runs on the Kiku-Engine ZeroGPU Space first, and on a private
+ * Modal GPU through /api/modal/jobs when ZeroGPU cannot serve it. The browser
  * calls the Hugging Face engines itself (see lib/studio/engine.ts).
  * Hugging Face
  * rate-limits Spaces by the caller's address, and this app's Docker Space shares

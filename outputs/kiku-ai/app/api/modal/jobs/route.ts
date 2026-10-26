@@ -5,6 +5,8 @@ import {modalEngine,modalFile} from '@/lib/modal-engine';
 import {follow,jobOf,startJob} from '@/lib/modal-jobs';
 export const runtime='nodejs';
 export const maxDuration=1200;
+/** A failure the engine explained itself; its message is meant for the user. */
+class EngineError extends Error{}
 
 /** Keep private Modal credentials on the server while streaming queue and GPU progress. The job outlives the connection; see modal-jobs. */
 export async function POST(req:Request){
@@ -58,7 +60,8 @@ export async function POST(req:Request){
    for await(const event of job){
     signal.throwIfAborted();
     if(event.type==='status'){
-     if(event.stage==='error')throw new Error('Generation failed');
+     // The engine's own message (a gr.Error) says what to change, such as a section with no clear beat.
+     if(event.stage==='error')throw new EngineError(typeof event.message==='string'?event.message.trim().slice(0,400):'');
      const step=event.progress_data?.find(p=>p.desc||p.progress!==null||p.length);
      const fraction=step?.progress??(step?.index!=null&&step.length?(step.index+1)/step.length:null);
      const running=(event as {original_msg?:string}).original_msg==='process_starts'||!!step||event.stage==='generating';
@@ -74,8 +77,10 @@ export async function POST(req:Request){
     }
    }
    if(!received)throw new Error('No result');
-  }catch{
-   send({type:'error',error:signal.aborted?'The Modal generation was cancelled or timed out.':'The Modal generation could not finish. Try again; your project is safe.'});
+  }catch(error){
+   send({type:'error',error:signal.aborted?'The Modal generation was cancelled or timed out.'
+    :error instanceof EngineError&&error.message?error.message
+    :'The Modal generation could not finish. Try again; your project is safe.'});
   }finally{signal.removeEventListener('abort',stop);client?.close();}
  });
  return follow(id,jobOf(id,auth.session.user.id)!,0);

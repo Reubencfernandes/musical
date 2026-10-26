@@ -1,7 +1,8 @@
 import type {Client} from '@gradio/client';
 import type {Download} from '@/lib/types';
-import {YUE2,JOBS,type Engine,type Input,type Job,asFile,explain,route} from '@/lib/jobs';
+import {ENGINE,YUE2,JOBS,type Engine,type Input,type Job,type Spec,asFile,explain,route} from '@/lib/jobs';
 import {encodeWav} from './audio';
+import type {Model} from './models';
 
 /** Raised when the session has lapsed, so the studio can show sign-in without losing the project. */
 export class SignedOut extends Error{}
@@ -85,8 +86,8 @@ const backOnline=(signal:AbortSignal)=>new Promise<void>(done=>{
 });
 
 /**
- * YuE2-Turbo runs on our private Modal GPU through the authenticated
- * app server. The job lives on the server, not in this connection: when
+ * YuE2-Turbo falls back to our private Modal GPU, through the authenticated
+ * app server, when ZeroGPU cannot serve it. The job lives on the server, not in this connection: when
  * Hugging Face's proxy drops the stream, or the browser goes offline, this
  * reattaches and carries on from the last event it saw instead of losing the
  * generation.
@@ -190,7 +191,31 @@ export async function runJob<T>(name:Job,input:Input,{signal,status,progress,job
   if(seconds!==null&&seconds<limits.min-0.05)throw new Error(`Use at least ${limits.min} seconds of audio.`);
   if(seconds!==null&&seconds>limits.max+0.05)throw new Error(`The engine takes up to ${limits.max/60} minutes at once. Select a shorter part; nothing was submitted.`);
  }
- if(engine===YUE2)return runModal<T>(name,input,{signal,status,progress,job});
+ const call={signal,status,progress,job};
+ if(engine!==YUE2)return runSpace<T>(engine,spec,model,built,audio,call);
+ // YuE2-Turbo runs first on the Kiku-Engine ZeroGPU Space, on the user's own GPU
+ // allowance. When ZeroGPU cannot serve it (allowance used up, GPU time ran out,
+ // the Space down or overloaded), our private Modal GPU takes the job instead. A
+ // message the engine wrote about the request itself goes to the user as it is.
+ try{return await runSpace<T>(ENGINE,spec,model,built,audio,call,true);}
+ catch(error){
+  if(signal.aborted||!(error instanceof Unavailable))throw error;
+  status('The free GPU could not take this, so Kiku’s own GPU is taking over…');
+  return runModal<T>(name,input,call);
+ }
+}
+
+/** ZeroGPU could not run the job; the message says why. */
+class Unavailable extends Error{}
+/**
+ * ZeroGPU and gateway failures, and the engine's catch-all for a crashed GPU
+ * worker (see failed() in the engine), as opposed to its messages about the request.
+ */
+const UNAVAILABLE=/quota|GPU.*duration|exceeded|allowance|gpu task aborted|timed out|timeout|no gpu|unavailable|starting|\b(429|50[0234])\b|too many requests|rate.?limit|<!doctype html|<html|fetch failed|failed to fetch|network|zerogpu|cuda|out of memory|too long to process at once|details are in the space logs|returned nothing|^generation failed\.?$|^error$/i;
+
+/** Run a job on a Hugging Face Space with the user's own token. `fallback` raises Unavailable for failures another GPU could get past. */
+async function runSpace<T>(engine:Engine,spec:Spec,model:Model,built:{args:(audio:unknown)=>unknown[]},audio:Blob|null,
+ {signal,status,progress}:Call,fallback=false):Promise<T>{
  const endpoint=typeof spec.endpoint==='function'?spec.endpoint(model):spec.endpoint;
  const token=await hfToken();
  const {handle_file}=await import('@gradio/client');
@@ -237,6 +262,7 @@ export async function runJob<T>(name:Job,input:Input,{signal,status,progress,job
   if(signal.aborted||error instanceof SignedOut)throw error;
   const message=error instanceof Error?error.message:'Generation could not finish.';
   if(/\b401\b|unauthori[sz]ed|invalid.*token/i.test(message)){cached=null;throw new SignedOut('Sign in again to continue.');}
+  if(fallback&&UNAVAILABLE.test(message.trim()))throw new Unavailable(message);
   throw new Error(explain(message).slice(0,600));
  }finally{client?.close();}
 }
