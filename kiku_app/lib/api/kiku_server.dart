@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -31,8 +30,8 @@ typedef StatusFn = void Function(String message);
 typedef ProgressFn = void Function(Progress progress);
 
 /// The Kiku AI web app's server, which holds the private Modal GPU
-/// credentials for ACE-Step 1.5, YuE2 and DreamLite. The app calls it with the
-/// user's own Hugging Face token as a bearer header.
+/// credentials for ACE-Step 1.5 and YuE2. The app calls it with the user's own
+/// Hugging Face token as a bearer header.
 class KikuServer {
   KikuServer(this.origin, this.token);
   final String origin, token;
@@ -150,31 +149,6 @@ class KikuServer {
     }
     progress?.call(const Progress(fraction: 1, eta: 0, running: true));
     return result!;
-  }
-
-  /// DreamLite cover art for a song, as WebP, and the seed it used.
-  Future<(Uint8List, int?)> cover({required String title, required String caption, required String lyrics}) async {
-    final client = http.Client();
-    try {
-      final response = await client
-          .post(
-            Uri.parse('$origin/api/modal/cover'),
-            headers: {..._auth, 'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'title': title.length > 80 ? title.substring(0, 80) : title,
-              'caption': caption.length > 2000 ? caption.substring(0, 2000) : caption,
-              'lyrics': lyrics.length > 500 ? lyrics.substring(0, 500) : lyrics,
-            }),
-          )
-          .timeout(const Duration(minutes: 10));
-      if (response.statusCode == 401) throw const SignedOut();
-      if (response.statusCode != 200 || !(response.headers['content-type'] ?? '').startsWith('image/webp')) {
-        throw const KikuException('The cover art could not be made. Try again.');
-      }
-      return (response.bodyBytes, int.tryParse(response.headers['x-cover-seed'] ?? ''));
-    } finally {
-      client.close();
-    }
   }
 
   static String? _error(String body) {

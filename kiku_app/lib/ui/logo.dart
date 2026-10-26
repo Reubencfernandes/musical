@@ -3,17 +3,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'logo_pixels.g.dart';
+import 'logo_mark.g.dart';
 
-/// The Kiku AI mark: a pixel K on the orange tile. branding/generate.py draws
-/// the same K for every icon. Like the web app's mark, its pixels drop in when
-/// it appears and a wave runs through them every few seconds; both stay still
-/// when the system asks for less motion.
+/// A listening K: a curved receiver and two swept sound ribbons answer a signal
+/// in the aperture. Its paths are shared with the web mark and launcher icons.
 class KikuMark extends StatefulWidget {
-  const KikuMark({super.key, this.size = 28, this.tile = true});
+  const KikuMark({super.key, this.size = 28, this.tile = false});
   final double size;
 
-  /// Without the tile, just the pixels in the theme's accent colour.
+  /// Optional warm-ink tile for contexts that need an app-icon treatment.
   final bool tile;
 
   @override
@@ -21,10 +19,16 @@ class KikuMark extends StatefulWidget {
 }
 
 class _KikuMarkState extends State<KikuMark> with TickerProviderStateMixin {
-  // The last pixel starts (5 + 6) × 35 ms in and takes 550 ms.
-  late final _intro = AnimationController(vsync: this, duration: const Duration(milliseconds: 950));
-  // The last pixel starts 5 × 90 + 6 × 25 ms in and takes 700 ms.
-  late final _wave = AnimationController(vsync: this, duration: const Duration(milliseconds: 1300));
+  // The receiver settles first, then the two sound ribbons open.
+  late final _intro = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 950),
+  );
+  // A short response followed by a quiet interval; no ticker runs while idle.
+  late final _wave = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1300),
+  );
   Timer? _every;
 
   @override
@@ -35,10 +39,19 @@ class _KikuMarkState extends State<KikuMark> with TickerProviderStateMixin {
       _every = null;
       _intro.value = 1;
       _wave.value = 0;
+    } else if (!TickerMode.valuesOf(context).enabled) {
+      _every?.cancel();
+      _every = null;
+      _intro.stop();
+      _wave.stop();
+      _wave.value = 0;
     } else if (_every == null) {
       _intro.forward();
       // The controller only runs while a wave passes, not between waves.
-      _every = Timer.periodic(const Duration(seconds: 5), (_) => _wave.forward(from: 0));
+      _every = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _wave.forward(from: 0),
+      );
     }
   }
 
@@ -54,64 +67,106 @@ class _KikuMarkState extends State<KikuMark> with TickerProviderStateMixin {
   Widget build(BuildContext context) => Semantics(
     label: 'Kiku AI',
     image: true,
-    child: SizedBox.square(
-      dimension: widget.size,
-      child: CustomPaint(painter: _MarkPainter(widget.tile, Theme.of(context).colorScheme.primary, _intro, _wave)),
+    child: RepaintBoundary(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: CustomPaint(painter: _MarkPainter(widget.tile, _intro, _wave)),
+      ),
     ),
   );
 }
 
 class _MarkPainter extends CustomPainter {
-  _MarkPainter(this.tile, this.color, this.intro, this.wave) : super(repaint: Listenable.merge([intro, wave]));
+  _MarkPainter(this.tile, this.intro, this.wave)
+    : super(repaint: Listenable.merge([intro, wave]));
   final bool tile;
-  final Color color;
   final Animation<double> intro, wave;
 
-  // On a 100-unit tile, as in the web app's mark.
-  static const _pitch = 10.0, _pixel = 9.0;
-  static const _left = 50 - ((kikuCols - 1) * _pitch + _pixel) / 2;
-  static const _top = 50 - ((kikuRows - 1) * _pitch + _pixel) / 2;
+  static final _receiver = kikuReceiverPath();
+  static final _upper = kikuUpperPath();
+  static final _lower = kikuLowerPath();
+  static const _artboard = Rect.fromLTWH(0, 0, 100, 100);
+  static final _ink = const LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFFFF864A), Color(0xFFF24D24)],
+  ).createShader(_artboard);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final s = size.width, unit = s / 100;
+    canvas.save();
+    canvas.scale(size.width / 100, size.height / 100);
     if (tile) {
-      final rect = Offset.zero & size;
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(s * 0.235)),
+        RRect.fromRectAndRadius(_artboard, const Radius.circular(23.5)),
         Paint()
           ..shader = const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFFF8540), Color(0xFFF2541C)],
-          ).createShader(rect),
+            colors: [Color(0xFF2A231F), Color(0xFF171615)],
+          ).createShader(_artboard),
       );
     }
-    final ink = tile ? const Color(0xFFFFF5EC) : color;
-    final introMs = intro.value * 950, waveMs = wave.isAnimating ? wave.value * 1300 : -1.0;
-    for (final cell in kikuCells) {
-      final x = cell[0], y = cell[1];
-      // Dropping in: from above, small and clear, overshooting a little as it lands.
-      final t = ((introMs - (x + y) * 35) / 550).clamp(0.0, 1.0);
-      final landed = Curves.easeOutBack.transform(t);
-      // The wave: shrink and fade for 300 ms, then recover over 400 ms.
-      final local = waveMs - (x * 90 + y * 25);
-      final dip = local < 0 ? 0.0 : local < 300 ? Curves.easeInOut.transform(local / 300) : local < 700 ? 1 - Curves.easeInOut.transform((local - 300) / 400) : 0.0;
-      final scale = (0.3 + 0.7 * landed) * (1 - 0.4 * dip);
-      final opacity = (t * (1 - 0.65 * dip)).clamp(0.0, 1.0);
-      if (opacity <= 0) continue;
-      final side = _pixel * unit * math.max(0, scale);
-      final cx = (_left + x * _pitch + _pixel / 2) * unit;
-      final cy = (_top + y * _pitch + _pixel / 2 - 22 * (1 - landed)) * unit;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx, cy), width: side, height: side), Radius.circular(1.2 * unit * scale)),
-        Paint()..color = ink.withValues(alpha: ink.a * opacity),
+    final introMs = intro.value * 950;
+    final response = wave.isAnimating ? math.sin(wave.value * math.pi) : 0.0;
+
+    void ribbon(
+      Path path,
+      double delay,
+      double angle,
+      double answer, {
+      bool receiver = false,
+    }) {
+      final t = ((introMs - delay) / (receiver ? 700 : 790)).clamp(0.0, 1.0);
+      final landed = Curves.easeOutCubic.transform(t);
+      canvas.save();
+      canvas.translate(44, 52);
+      canvas.rotate((angle * (1 - landed) + answer * response) * math.pi / 180);
+      if (receiver) {
+        canvas.translate(-4 * (1 - landed), 0);
+        canvas.scale(1.0, .9 + .1 * landed);
+      }
+      canvas.translate(-44, -52);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..shader = _ink
+          ..color = Colors.white.withValues(alpha: t),
+      );
+      canvas.restore();
+    }
+
+    ribbon(_receiver, 0, 0, 0, receiver: true);
+    ribbon(_upper, 90, 14, -3.5);
+    ribbon(_lower, 160, -12, 3);
+
+    final pointOpacity = ((introMs - 320) / 450).clamp(0.0, 1.0);
+    final pointScale = wave.isAnimating
+        ? 1 - .3 * math.sin(wave.value * math.pi * 2) * (1 - wave.value)
+        : 1.0;
+    canvas.drawCircle(
+      kikuSignal,
+      kikuSignalRadius * pointScale,
+      Paint()
+        ..shader = _ink
+        ..color = Colors.white.withValues(alpha: pointOpacity),
+    );
+    if (wave.isAnimating) {
+      final travel = Curves.easeInOutCubic.transform(wave.value);
+      canvas.drawCircle(
+        kikuSignal + Offset(34 * travel, -29 * travel),
+        2.2,
+        Paint()
+          ..color = const Color(
+            0xFFFFF0D9,
+          ).withValues(alpha: math.sin(wave.value * math.pi)),
       );
     }
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(_MarkPainter old) => old.tile != tile || old.color != color;
+  bool shouldRepaint(_MarkPainter old) => old.tile != tile;
 }
 
 /// The mark with the name beside it.
@@ -127,7 +182,12 @@ class KikuWordmark extends StatelessWidget {
       SizedBox(width: size * 0.36),
       Text(
         'Kiku',
-        style: TextStyle(fontFamily: 'Bespoke Stencil', fontWeight: FontWeight.w700, fontSize: size * 0.82, letterSpacing: -0.6),
+        style: TextStyle(
+          fontFamily: 'Bespoke Stencil',
+          fontWeight: FontWeight.w700,
+          fontSize: size * 0.82,
+          letterSpacing: -0.6,
+        ),
       ),
     ],
   );

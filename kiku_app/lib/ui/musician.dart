@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// The orange dot-matrix musician from the web app's processing screen: fixed
-/// dot positions whose radii change smoothly, playing saxophone, guitar, piano
-/// or drums at random.
+/// dot positions whose radii change smoothly. It is always the saxophonist, as
+/// on the web app.
 class Musician extends StatefulWidget {
   const Musician({super.key, this.size = 260});
   final double size;
@@ -16,7 +16,7 @@ class Musician extends StatefulWidget {
 
 class _MusicianState extends State<Musician> with SingleTickerProviderStateMixin {
   late final AnimationController _animation = AnimationController(vsync: this, duration: const Duration(milliseconds: 5700));
-  late final String _performer = const ['saxophone', 'guitar', 'piano', 'drums'][Random().nextInt(4)];
+  static const _performer = 'saxophone';
   List<List<num>> _dots = const [];
 
   @override
@@ -33,9 +33,11 @@ class _MusicianState extends State<Musician> with SingleTickerProviderStateMixin
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
+    final reduced = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (reduced || !TickerMode.valuesOf(context).enabled) {
       _animation.stop();
-    } else {
+      if (reduced) _animation.value = 0;
+    } else if (!_animation.isAnimating) {
       _animation.repeat();
     }
   }

@@ -47,18 +47,22 @@ const _maxSeconds = 240.0, _scoreMax = 300.0;
 /// renders the mix and plays it, so tracks stay sample-locked on every device.
 class StudioController extends ChangeNotifier {
   StudioController(this.engine, this.library) {
-    _player.positionStream.listen((d) {
-      position.value = _mixFrom + d.inMilliseconds / 1000;
-    });
-    _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        _player.pause();
-        position.value = 0;
-        _mixFrom = 0;
-        _mixPath = null;
-      }
-      notifyListeners();
-    });
+    _subscriptions.add(
+      _player.createPositionStream(steps: 10000, minPeriod: const Duration(milliseconds: 16), maxPeriod: const Duration(milliseconds: 32)).listen((d) {
+        position.value = _mixFrom + d.inMilliseconds / 1000;
+      }),
+    );
+    _subscriptions.add(
+      _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          _player.pause();
+          position.value = 0;
+          _mixFrom = 0;
+          _mixPath = null;
+        }
+        notifyListeners();
+      }),
+    );
   }
 
   final Engine engine;
@@ -79,6 +83,7 @@ class StudioController extends ChangeNotifier {
   /// The playhead, in seconds.
   final ValueNotifier<double> position = ValueNotifier(0);
   final _player = AudioPlayer();
+  final _subscriptions = <StreamSubscription<Object?>>[];
   String? _mixPath;
   double _mixFrom = 0;
   int _render = 0;
@@ -169,7 +174,7 @@ class StudioController extends ChangeNotifier {
     return key;
   }
 
-  static Float32List _outline(Pcm pcm) => wave.peaks(pcm, buckets: math.max(200, math.min(4000, (pcm.duration * 40).round())));
+  static Float32List _outline(Pcm pcm) => wave.peaks(pcm, buckets: math.max(256, math.min(128000, (pcm.duration * 160).ceil())));
 
   /// Adds audio as a new track at [at] seconds.
   void addAudio(String trackName, Pcm pcm, double at) {
@@ -788,6 +793,9 @@ class StudioController extends ChangeNotifier {
       c.cancel();
     }
     _rerender?.cancel();
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
     _player.dispose();
     position.dispose();
     super.dispose();

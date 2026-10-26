@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../api/errors.dart';
 import 'theme.dart';
 
-/// A song's artwork: its DreamLite cover when it has one, otherwise the same
+/// A song's artwork: its generated cover when it has one, otherwise the same
 /// gradient the web app draws from the song's id.
 class SongArt extends StatelessWidget {
   const SongArt({super.key, required this.id, this.size = 56, this.cover, this.child});
@@ -63,9 +63,14 @@ class Meter extends StatelessWidget {
   const Meter({super.key, required this.value});
   final double value;
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(2),
-    child: LinearProgressIndicator(value: value.clamp(0.0, 1.0), minHeight: 3),
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(end: value.clamp(0.0, 1.0)),
+    duration: (MediaQuery.maybeDisableAnimationsOf(context) ?? false) ? Duration.zero : const Duration(milliseconds: 420),
+    curve: Curves.easeOutCubic,
+    builder: (context, value, _) => ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: LinearProgressIndicator(value: value, minHeight: 4),
+    ),
   );
 }
 

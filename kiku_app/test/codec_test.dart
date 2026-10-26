@@ -127,5 +127,22 @@ void main() {
       expect(out[0], closeTo(.5, .001));
       expect(out[1], closeTo(1, .001));
     });
+
+    test('waveform bars retain attacks between their endpoints', () {
+      final outline = Float32List.fromList([0, 0, 1, 0, .25, 0]);
+      expect(peakInRange(outline, 0, .5), 1);
+      expect(peakInRange(outline, .5, 1), .25);
+      expect(peakInRange(outline, 0, 1), 1);
+    });
+
+    test('waveform sampling respects trims, silence, and buffer boundaries', () {
+      final outline = Float32List.fromList([1, 0, 0, .5]);
+      expect(peakInRange(outline, .25, .75), 0);
+      expect(peakInRange(outline, .8, 1.2), .5);
+      expect(peakInRange(outline, 1, 2), 0);
+      expect(peakInRange(outline, -.5, 0), 0);
+      expect(peakInRange(outline, .5, .5), 0);
+      expect(peakInRange(Float32List(0), 0, 1), 0);
+    });
   });
 }

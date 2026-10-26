@@ -246,7 +246,23 @@ class Engine {
     }
   }
 
-  /// DreamLite artwork for a song, through Kiku's server.
-  Future<(Uint8List, int?)> cover({required String title, required String caption, required String lyrics}) =>
-      _server.cover(title: title, caption: caption, lyrics: lyrics);
+  /// Z-Image Turbo artwork for a song as WebP, and the seed it used, from the Kiku Art
+  /// ZeroGPU Space on the user's own token. The lyrics are not used: the model would paint them.
+  Future<(Uint8List, int?)> cover({required String title, required String caption, required String lyrics}) async {
+    final client = http.Client();
+    try {
+      final gradio = GradioClient(Defaults.artOrigin, auth.token, client);
+      final outputs = await gradio.run('/cover', [title, caption, -1],
+          status: (_) {}, waiting: 'Waiting for a GPU to paint the cover…');
+      final image = gradio.file(outputs.isNotEmpty ? outputs[0] : null);
+      if (image == null) throw const KikuException('The cover art could not be made. Try again.');
+      final seed = outputs.length > 1 ? outputs[1] : null;
+      return (await fetch(image), seed is num ? seed.toInt() : null);
+    } on SignedOut {
+      auth.expire();
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
 }

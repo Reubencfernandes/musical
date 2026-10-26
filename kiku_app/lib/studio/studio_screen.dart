@@ -3,16 +3,19 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../api/errors.dart';
+import '../audio/waveform.dart' as wave;
 import '../services.dart';
 import '../shell/shell.dart';
 import '../songs/song_tile.dart' show shareFile;
 import '../ui/theme.dart';
+import '../ui/activity_wave.dart';
 import '../ui/widgets.dart';
 import 'ai_sheet.dart';
 import 'project.dart';
@@ -358,112 +361,74 @@ class _TimelineState extends State<_Timeline> {
   Widget build(BuildContext context) {
     final studio = widget.studio, project = studio.project;
     final colors = KikuColors.of(context);
-    return LayoutBuilder(builder: (context, size) {
-      final view = math.max(100.0, size.maxWidth - _headerWidth);
-      final fit = view / math.max(30.0, project.end + 8);
-      final pps = (_zoom ?? fit).clamp(4.0, 400.0);
-      final width = math.max(view, (project.end + 30) * pps);
-      final height = project.tracks.length * _rowHeight;
-      final durations = {for (final e in studio.buffers.entries) e.key: e.value.duration};
-      return Column(
-        children: [
-          SizedBox(
-            height: _rulerHeight,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: _headerWidth,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Zoom out',
-                        iconSize: 18,
-                        onPressed: () => setState(() => _zoom = pps / 1.5),
-                        icon: const Icon(Icons.zoom_out_rounded),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Zoom in',
-                        iconSize: 18,
-                        onPressed: () => setState(() => _zoom = pps * 1.5),
-                        icon: const Icon(Icons.zoom_in_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _ruler,
-                    scrollDirection: Axis.horizontal,
-                    physics: const NeverScrollableScrollPhysics(),
-                    child: GestureDetector(
-                      onTapUp: (d) => studio.seek(d.localPosition.dx / pps),
-                      child: CustomPaint(
-                        size: Size(width, _rulerHeight),
-                        painter: _RulerPainter(pps: pps, bpm: project.bpm, color: colors.muted, line: colors.line, position: studio.position),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
+    return LayoutBuilder(
+      builder: (context, size) {
+        final view = math.max(100.0, size.maxWidth - _headerWidth);
+        final fit = view / math.max(30.0, project.end + 8);
+        final pps = (_zoom ?? fit).clamp(4.0, 400.0);
+        final width = math.max(view, (project.end + 30) * pps);
+        final height = project.tracks.length * _rowHeight;
+        final durations = {for (final e in studio.buffers.entries) e.key: e.value.duration};
+        return Column(
+          children: [
+            SizedBox(
+              height: _rulerHeight,
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
                     width: _headerWidth,
-                    child: Column(
+                    child: Row(
                       children: [
-                        for (final track in project.tracks)
-                          _TrackHeader(track: track, project: project, onTap: () => _trackMenu(track), studio: studio),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Zoom out',
+                          iconSize: 18,
+                          onPressed: () => setState(() => _zoom = pps / 1.5),
+                          icon: const Icon(Icons.zoom_out_rounded),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Zoom in',
+                          iconSize: 18,
+                          onPressed: () => setState(() => _zoom = pps * 1.5),
+                          icon: const Icon(Icons.zoom_in_rounded),
+                        ),
                       ],
                     ),
                   ),
                   Expanded(
                     child: SingleChildScrollView(
-                      controller: _lanes,
+                      controller: _ruler,
                       scrollDirection: Axis.horizontal,
+                      physics: const NeverScrollableScrollPhysics(),
                       child: GestureDetector(
-                        onTapUp: (d) => _tap(d.localPosition, pps),
-                        onLongPressStart: (d) {
-                          final (row, time) = _hit(d.localPosition, pps);
-                          if (row < 0 || row >= project.tracks.length) return;
-                          _rangeStart = time;
-                          _rangeTrack = project.tracks[row].id;
-                          studio.selectRange(_rangeTrack!, time, time);
-                        },
-                        onLongPressMoveUpdate: (d) {
-                          if (_rangeStart == null || _rangeTrack == null) return;
-                          studio.selectRange(_rangeTrack!, _rangeStart!, math.max(0.0, d.localPosition.dx / pps));
-                        },
-                        onLongPressEnd: (_) {
-                          _rangeStart = null;
-                          _rangeTrack = null;
-                        },
+                        onTapUp: (d) => studio.seek(d.localPosition.dx / pps),
                         child: SizedBox(
                           width: width,
-                          height: height,
+                          height: _rulerHeight,
                           child: Stack(
                             children: [
                               Positioned.fill(
-                                child: CustomPaint(
-                                  painter: _LanesPainter(
-                                    project: project,
-                                    peaks: studio.peaks,
-                                    durations: durations,
-                                    selection: studio.selection,
-                                    pps: pps,
-                                    raise: colors.raise,
-                                    line: colors.line,
-                                    text: Theme.of(context).colorScheme.onSurface,
+                                child: RepaintBoundary(
+                                  child: ListenableBuilder(
+                                    listenable: _ruler,
+                                    builder: (context, _) => CustomPaint(
+                                      painter: _RulerPainter(
+                                        pps: pps,
+                                        color: colors.muted,
+                                        line: colors.line,
+                                        viewportStart: _ruler.hasClients ? _ruler.offset : 0,
+                                        viewportWidth: view,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                              Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _PlayheadPainter(studio.position, pps)))),
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: RepaintBoundary(child: CustomPaint(painter: _PlayheadPainter(studio.position, pps, ruler: true))),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -473,10 +438,85 @@ class _TimelineState extends State<_Timeline> {
                 ],
               ),
             ),
-          ),
-        ],
-      );
-    });
+            Expanded(
+              child: SingleChildScrollView(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: _headerWidth,
+                      child: Column(
+                        children: [
+                          for (final track in project.tracks) _TrackHeader(track: track, project: project, onTap: () => _trackMenu(track), studio: studio),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: _lanes,
+                        scrollDirection: Axis.horizontal,
+                        child: GestureDetector(
+                          onTapUp: (d) => _tap(d.localPosition, pps),
+                          onLongPressStart: (d) {
+                            final (row, time) = _hit(d.localPosition, pps);
+                            if (row < 0 || row >= project.tracks.length) return;
+                            _rangeStart = time;
+                            _rangeTrack = project.tracks[row].id;
+                            studio.selectRange(_rangeTrack!, time, time);
+                          },
+                          onLongPressMoveUpdate: (d) {
+                            if (_rangeStart == null || _rangeTrack == null) return;
+                            studio.selectRange(_rangeTrack!, _rangeStart!, math.max(0.0, d.localPosition.dx / pps));
+                          },
+                          onLongPressEnd: (_) {
+                            _rangeStart = null;
+                            _rangeTrack = null;
+                          },
+                          child: SizedBox(
+                            width: width,
+                            height: height,
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: RepaintBoundary(
+                                    child: ListenableBuilder(
+                                      listenable: _lanes,
+                                      builder: (context, _) => CustomPaint(
+                                        painter: _LanesPainter(
+                                          project: project,
+                                          peaks: studio.peaks,
+                                          durations: durations,
+                                          selection: studio.selection,
+                                          pps: pps,
+                                          raise: colors.raise,
+                                          line: colors.line,
+                                          text: Theme.of(context).colorScheme.onSurface,
+                                          viewportStart: _lanes.hasClients ? _lanes.offset : 0,
+                                          viewportWidth: view,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: RepaintBoundary(child: CustomPaint(painter: _PlayheadPainter(studio.position, pps))),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -620,103 +660,143 @@ class _TrackSheet extends StatelessWidget {
 }
 
 class _RulerPainter extends CustomPainter {
-  _RulerPainter({required this.pps, required this.bpm, required this.color, required this.line, required this.position}) : super(repaint: position);
-  final double pps, bpm;
+  _RulerPainter({required this.pps, required this.color, required this.line, required this.viewportStart, required this.viewportWidth});
+  final double pps, viewportStart, viewportWidth;
   final Color color, line;
-  final ValueNotifier<double> position;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..color = line;
     // Label every so many seconds, keeping labels at least 60 px apart.
     final step = [1, 2, 5, 10, 15, 30, 60, 120].firstWhere((s) => s * pps >= 60, orElse: () => 300);
-    for (double t = 0; t * pps < size.width; t += step) {
+    final from = (viewportStart / pps / step).floor() * step;
+    final right = math.min(size.width, viewportStart + viewportWidth);
+    for (double t = from.toDouble(); t * pps < right; t += step) {
       final x = t * pps;
       canvas.drawLine(Offset(x, size.height - 8), Offset(x, size.height), paint);
       final label = TextPainter(
-        text: TextSpan(text: formatClock(t), style: TextStyle(color: color, fontSize: 10)),
+        text: TextSpan(text: formatClock(t), style: TextStyle(color: color, fontFamily: 'Supreme', fontSize: 10)),
         textDirection: TextDirection.ltr,
       )..layout();
       label.paint(canvas, Offset(x + 3, 4));
     }
-    canvas.drawLine(Offset(0, size.height - .5), Offset(size.width, size.height - .5), paint);
-    final x = position.value * pps;
-    final head = Path()
-      ..moveTo(x - 5, size.height - 9)
-      ..lineTo(x + 5, size.height - 9)
-      ..lineTo(x, size.height)
-      ..close();
-    canvas.drawPath(head, Paint()..color = accent);
+    canvas.drawLine(Offset(viewportStart, size.height - .5), Offset(right, size.height - .5), paint);
   }
 
   @override
-  bool shouldRepaint(_RulerPainter old) => old.pps != pps || old.bpm != bpm || old.color != color;
+  bool shouldRepaint(_RulerPainter old) =>
+      old.pps != pps || old.color != color || old.line != line || old.viewportStart != viewportStart || old.viewportWidth != viewportWidth;
 }
 
 class _LanesPainter extends CustomPainter {
   _LanesPainter({
     required this.project,
-    required this.peaks,
+    required Map<String, Float32List> peaks,
     required this.durations,
     required this.selection,
     required this.pps,
     required this.raise,
     required this.line,
     required this.text,
-  });
+    required this.viewportStart,
+    required this.viewportWidth,
+  }) : peaks = Map.of(peaks);
   final Project project;
   final Map<String, Float32List> peaks;
   final Map<String, double> durations;
   final Selection selection;
-  final double pps;
+  final double pps, viewportStart, viewportWidth;
   final Color raise, line, text;
 
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()..color = line;
+    final visible = Rect.fromLTWH(viewportStart, 0, viewportWidth, size.height);
+    final right = math.min(size.width, visible.right);
     // Bar lines on the project's tempo.
     final bar = 240 / project.bpm;
     if (bar * pps >= 12) {
       final grid = Paint()..color = line.withValues(alpha: .45);
-      for (double t = 0; t * pps < size.width; t += bar) {
+      for (double t = (viewportStart / pps / bar).floor() * bar; t * pps < right; t += bar) {
         canvas.drawLine(Offset(t * pps, 0), Offset(t * pps, size.height), grid);
       }
     }
     for (int i = 0; i < project.tracks.length; i++) {
       final track = project.tracks[i], top = i * _rowHeight;
       final heard = audible(project, track);
-      final color = _hex(track.color);
-      canvas.drawLine(Offset(0, top + _rowHeight - .5), Offset(size.width, top + _rowHeight - .5), linePaint);
+      canvas.drawLine(Offset(viewportStart, top + _rowHeight - .5), Offset(right, top + _rowHeight - .5), linePaint);
       for (final clip in project.clips.where((c) => c.trackId == track.id)) {
         final rect = Rect.fromLTWH(clip.start * pps, top + 7, math.max(2.0, clip.duration * pps), _rowHeight - 14);
-        final dim = clip.muted ? .22 : heard ? 1.0 : .45;
+        if (!rect.overlaps(visible)) continue;
+        final dim = clip.muted
+            ? .22
+            : heard
+            ? 1.0
+            : .45;
         final selected = selection.clips.contains(clip.id);
-        final shape = RRect.fromRectAndRadius(rect, const Radius.circular(8));
-        canvas.drawRRect(shape, Paint()..color = color.withValues(alpha: .38 * dim + .08));
-        if (selected) canvas.drawRRect(shape, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = 2);
+        final shape = RRect.fromRectAndRadius(rect, const Radius.circular(3));
+        final surface = Color.lerp(raise, const Color(0xFF3B4942), dim)!;
+        canvas.drawRRect(shape, Paint()..color = surface);
         canvas.save();
         canvas.clipRRect(shape);
+        if (bar * pps >= 12) {
+          final divisions = Paint()..color = const Color(0xFF111F19).withValues(alpha: .24 * dim);
+          final left = math.max(rect.left, viewportStart);
+          for (double x = (left / pps / bar).ceil() * bar * pps; x < math.min(rect.right, right); x += bar * pps) {
+            canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), divisions);
+          }
+        }
         final outline = peaks[clip.buffer], length = durations[clip.buffer];
-        if (outline != null && length != null && length > 0) {
-          final wave = Paint()
-            ..color = Color.lerp(color, Colors.white, .55)!.withValues(alpha: .9 * dim)
-            ..strokeWidth = 1.4;
-          final mid = rect.center.dy, half = rect.height / 2 - 10;
-          for (double x = math.max(rect.left, 0.0); x < rect.right; x += 2) {
-            final t = clip.offset + (x - rect.left) / pps;
-            final bucket = (t / length * outline.length).floor().clamp(0, outline.length - 1);
-            final amp = math.max(.02, outline[bucket].toDouble()) * half;
-            canvas.drawLine(Offset(x, mid - amp + 6), Offset(x, mid + amp + 6), wave);
+        if (outline != null && outline.isNotEmpty && length != null && length > 0 && rect.width > 6) {
+          final mid = rect.center.dy, half = rect.height / 2 - 2;
+          final wavePaint = Paint()..color = Color.lerp(surface, const Color(0xFF111F19), .45 + .55 * dim)!;
+          // Sample a connected silhouette at one logical pixel per column. Keep
+          // columns clip-aligned and include every source peak below each one.
+          const pitch = 1.0;
+          final first = math.max(0, ((viewportStart - rect.left) / pitch).floor() - 1);
+          final last = math.min(rect.right, right + pitch);
+          final silhouette = Path(), lower = <Offset>[];
+          for (double x = rect.left + first * pitch; x < last; x += pitch) {
+            final start = (clip.offset + (x - rect.left) / pps) / length;
+            final end = (clip.offset + (math.min(x + pitch, rect.right) - rect.left) / pps) / length;
+            final amplitude = wave.peakInRange(outline, start, end);
+            // Gentle visual compression reveals quieter details without raising
+            // silence or normalizing different clips to the same loudness.
+            final height = math.max(.6, math.pow(amplitude, .72) * half);
+            if (lower.isEmpty) {
+              silhouette.moveTo(x, mid - height);
+            } else {
+              silhouette.lineTo(x, mid - height);
+            }
+            lower.add(Offset(x, mid + height));
+          }
+          if (lower.isNotEmpty) {
+            for (final point in lower.reversed) {
+              silhouette.lineTo(point.dx, point.dy);
+            }
+            silhouette.close();
+            canvas.drawPath(silhouette, wavePaint);
           }
         }
         final label = TextPainter(
-          text: TextSpan(text: clip.name, style: TextStyle(color: text.withValues(alpha: .85 * dim + .1), fontSize: 10.5, fontWeight: FontWeight.w600)),
+          text: TextSpan(text: clip.name, style: TextStyle(
+            color: const Color(0xFFD2DBD3).withValues(alpha: .78 * dim + .12),
+            fontFamily: 'Supreme', fontSize: 10, fontWeight: FontWeight.w500,
+            shadows: const [Shadow(color: Color(0xFF111F19), blurRadius: 3)],
+          )),
           textDirection: TextDirection.ltr,
           maxLines: 1,
           ellipsis: '…',
-        )..layout(maxWidth: math.max(0.0, rect.width - 12));
-        label.paint(canvas, Offset(rect.left + 6, rect.top + 3));
+        )..layout(maxWidth: math.max(0.0, math.min(rect.right, right) - math.max(rect.left, viewportStart) - 12));
+        label.paint(canvas, Offset(math.max(rect.left, viewportStart) + 6, rect.top + 3));
         canvas.restore();
+        canvas.drawRRect(
+          shape.deflate(.5),
+          Paint()
+            ..color = (selected ? const Color(0xFFB6C4B9) : const Color(0xFF78877A)).withValues(alpha: .55 * dim + .15)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = selected ? 1.25 : .7,
+        );
       }
     }
     final range = selection.range;
@@ -733,22 +813,56 @@ class _LanesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LanesPainter old) =>
-      old.project != project || old.selection != selection || old.pps != pps || old.raise != raise || old.peaks.length != peaks.length;
+      old.project != project ||
+      old.selection != selection ||
+      old.pps != pps ||
+      old.raise != raise ||
+      old.line != line ||
+      old.text != text ||
+      old.viewportStart != viewportStart ||
+      old.viewportWidth != viewportWidth ||
+      !mapEquals(old.peaks, peaks) ||
+      !mapEquals(old.durations, durations);
 }
 
 class _PlayheadPainter extends CustomPainter {
-  _PlayheadPainter(this.position, this.pps) : super(repaint: position);
+  _PlayheadPainter(this.position, this.pps, {this.ruler = false}) : super(repaint: position);
   final ValueNotifier<double> position;
   final double pps;
+  final bool ruler;
 
   @override
   void paint(Canvas canvas, Size size) {
     final x = position.value * pps;
-    canvas.drawLine(Offset(x, 0), Offset(x, size.height), Paint()..color = accent..strokeWidth = 1.6);
+    if (ruler) {
+      final head = Path()
+        ..moveTo(x - 5, size.height - 10)
+        ..lineTo(x + 5, size.height - 10)
+        ..lineTo(x + 5, size.height - 6)
+        ..lineTo(x, size.height)
+        ..lineTo(x - 5, size.height - 6)
+        ..close();
+      canvas.drawPath(head, Paint()..color = accent);
+      return;
+    }
+    canvas.drawLine(
+      Offset(x, 0),
+      Offset(x, size.height),
+      Paint()
+        ..color = accent.withValues(alpha: .10)
+        ..strokeWidth = 6,
+    );
+    canvas.drawLine(
+      Offset(x, 0),
+      Offset(x, size.height),
+      Paint()
+        ..color = accent
+        ..strokeWidth = 1.6,
+    );
   }
 
   @override
-  bool shouldRepaint(_PlayheadPainter old) => old.pps != pps;
+  bool shouldRepaint(_PlayheadPainter old) => old.pps != pps || old.ruler != ruler || old.position != position;
 }
 
 class _Jobs extends StatelessWidget {
@@ -772,6 +886,7 @@ class _Jobs extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
+                    if (job.error == null) ...[const ActivityWave(width: 36, height: 26), const SizedBox(width: 10)],
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -820,7 +935,9 @@ class _JobTickerState extends State<_JobTicker> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => setState(() {}));
+    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (mounted && TickerMode.valuesOf(context).enabled) setState(() {});
+    });
   }
 
   @override

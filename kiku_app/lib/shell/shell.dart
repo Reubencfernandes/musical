@@ -39,10 +39,33 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<Shell> {
+class _ShellState extends State<Shell> with SingleTickerProviderStateMixin {
   Place _place = Place.home;
+  late final _entrance = AnimationController(vsync: this, duration: const Duration(milliseconds: 240), value: 1);
+  late final _opacity = Tween(begin: .88, end: 1.0).chain(CurveTween(curve: Curves.easeOutCubic)).animate(_entrance);
+  late final _offset = Tween(begin: const Offset(0, .012), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic)).animate(_entrance);
 
-  void _go(Place place) => setState(() => _place = place);
+  void _go(Place place) {
+    if (_place == place) return;
+    setState(() => _place = place);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _entrance.value = 1;
+    } else {
+      _entrance.forward(from: 0);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) _entrance.value = 1;
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -56,11 +79,27 @@ class _ShellState extends State<Shell> {
     final wide = MediaQuery.sizeOf(context).width >= 840;
     final pages = IndexedStack(
       index: _place.index,
-      children: const [HomeScreen(), GenerateScreen(), StudioScreen(), ScoreScreen(), LibraryScreen()],
+      children: [
+        for (final (index, page) in const [HomeScreen(), GenerateScreen(), StudioScreen(), ScoreScreen(), LibraryScreen()].indexed)
+          TickerMode(
+            enabled: _place.index == index,
+            child: RepaintBoundary(child: page),
+          ),
+      ],
     );
     // The studio and score keep their own full-screen layouts, as on the web.
     final player = _place == Place.studio || _place == Place.score ? const SizedBox.shrink() : MiniPlayer(player: services.player);
-    final body = Column(children: [Expanded(child: pages), player]);
+    final body = Column(
+      children: [
+        Expanded(
+          child: FadeTransition(
+            opacity: _opacity,
+            child: SlideTransition(position: _offset, child: pages),
+          ),
+        ),
+        player,
+      ],
+    );
     final colors = KikuColors.of(context);
     return ShellScope(
       go: _go,

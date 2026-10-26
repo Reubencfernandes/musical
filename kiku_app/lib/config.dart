@@ -10,6 +10,9 @@ class Defaults {
   /// The Gradio ZeroGPU engine: transcription, stems, lyrics and ACE-Step 1.
   static const engineOrigin = 'https://reubencf-kiku-engine.hf.space';
 
+  /// The Gradio ZeroGPU Space that paints song covers with Z-Image Turbo.
+  static const artOrigin = 'https://reubencf-kiku-art.hf.space';
+
   /// The app comes back from Hugging Face sign-in through this URL scheme.
   static const callbackScheme = 'kikuai';
   static const redirectUri = 'kikuai://oauth/callback';

@@ -137,7 +137,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             ),
             const Divider(height: 32),
             Text(
-              'YuE2, SheetSage2 and DreamLite-base are CC BY-NC 4.0 (non-commercial); ACE-Step is Apache 2.0 and Demucs MIT. '
+              'YuE2 and SheetSage2 are CC BY-NC 4.0 (non-commercial); ACE-Step and Z-Image Turbo are Apache 2.0 and Demucs MIT. '
               'Supreme and Bespoke Stencil are by Indian Type Foundry via Fontshare; abcjs is MIT.',
               style: TextStyle(fontSize: 11, height: 1.5, color: colors.faint),
             ),

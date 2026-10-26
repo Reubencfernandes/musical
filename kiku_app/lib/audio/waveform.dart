@@ -22,3 +22,16 @@ Float32List peaks(Pcm pcm, {int buckets = 1200}) {
   }
   return out;
 }
+
+/// The loudest peak covered by a visual bar, using normalized buffer positions.
+/// Sampling just one bucket skips short attacks when the timeline is zoomed out.
+double peakInRange(Float32List outline, double start, double end) {
+  if (outline.isEmpty || !start.isFinite || !end.isFinite || end <= start || end <= 0 || start >= 1) return 0;
+  final from = (start.clamp(0.0, 1.0) * outline.length).floor();
+  final to = (end.clamp(0.0, 1.0) * outline.length).ceil().clamp(from + 1, outline.length);
+  var peak = 0.0;
+  for (var i = from; i < to; i++) {
+    if (outline[i] > peak) peak = outline[i].toDouble();
+  }
+  return peak.clamp(0.0, 1.0);
+}

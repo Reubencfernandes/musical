@@ -7,6 +7,7 @@ import '../shell/player.dart';
 import '../shell/shell.dart';
 import '../studio/project.dart' show formatClock;
 import '../ui/theme.dart';
+import '../ui/activity_wave.dart';
 import '../ui/widgets.dart';
 import 'songs_controller.dart';
 
@@ -188,7 +189,9 @@ class MakingTile extends StatelessWidget {
           SongArt(
             id: making.id,
             size: 56,
-            child: failed ? const Icon(Icons.error_outline_rounded, color: Colors.white) : const Center(child: SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))),
+            child: failed
+                ? const Icon(Icons.error_outline_rounded, color: Colors.white)
+                : const Center(child: ActivityWave(width: 42, height: 30, color: Colors.white)),
           ),
           const SizedBox(width: 14),
           Expanded(

@@ -242,7 +242,7 @@ class SongsController extends ChangeNotifier {
       final art = await artwork;
       if (art == null || _removed.contains(id)) return;
       item.cover = art.$1;
-      final metadata = {'model': 'carlofkl/DreamLite-base', 'license': 'CC-BY-NC-4.0', 'seed': ?art.$2};
+      final metadata = {'model': 'Tongyi-MAI/Z-Image-Turbo', 'license': 'Apache-2.0', 'seed': ?art.$2};
       item.song = item.song.copyWith(cover: metadata);
       _changed();
       if (item.saved) {
@@ -323,7 +323,7 @@ class SongsController extends ChangeNotifier {
     try {
       final (bytes, seed) = await engine.cover(title: item.song.title, caption: item.song.caption, lyrics: item.song.lyrics);
       if (_removed.contains(item.song.id)) return;
-      final metadata = {'model': 'carlofkl/DreamLite-base', 'license': 'CC-BY-NC-4.0', 'seed': ?seed};
+      final metadata = {'model': 'Tongyi-MAI/Z-Image-Turbo', 'license': 'Apache-2.0', 'seed': ?seed};
       item
         ..cover = bytes
         ..song = item.song.copyWith(cover: metadata);

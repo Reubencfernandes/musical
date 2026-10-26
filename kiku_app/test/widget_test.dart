@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kiku_ai/score/sheet_view.dart';
 import 'package:kiku_ai/ui/logo.dart';
+import 'package:kiku_ai/ui/activity_wave.dart';
+import 'package:kiku_ai/ui/musician.dart';
 import 'package:kiku_ai/ui/theme.dart';
 import 'package:kiku_ai/ui/widgets.dart';
 
@@ -48,6 +50,31 @@ void main() {
     expect(find.text('Something went wrong'), findsOneWidget);
     await tester.tap(find.byTooltip('Dismiss'));
     expect(closed, isTrue);
+  });
+
+  testWidgets('processing motion pauses off screen and respects reduced motion', (tester) async {
+    Widget preview({bool visible = true, bool reduced = false}) => _app(
+      MediaQuery(
+        data: MediaQueryData(disableAnimations: reduced),
+        child: TickerMode(
+          enabled: visible,
+          child: const Column(mainAxisSize: MainAxisSize.min, children: [ActivityWave(), Musician(size: 160)]),
+        ),
+      ),
+    );
+    await tester.pumpWidget(preview());
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpWidget(preview(visible: false));
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.hasRunningAnimations, isFalse);
+    await tester.pumpWidget(preview());
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpWidget(preview(reduced: true));
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('shows the score as ABC where no web view is available', (tester) async {

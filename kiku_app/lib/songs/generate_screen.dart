@@ -35,7 +35,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
     super.initState();
     // Progress rows estimate between engine updates, so redraw them while songs are being made.
     _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (mounted && Kiku.of(context).songs.making.isNotEmpty) setState(() {});
+      if (mounted && TickerMode.valuesOf(context).enabled && Kiku.of(context).songs.making.isNotEmpty) setState(() {});
     });
   }
 
