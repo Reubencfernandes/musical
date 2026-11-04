@@ -280,8 +280,18 @@ function keyLabel(name, transpose) {
 function syncControls(arranged) {
   $('sheet-title').value = sheet.title;
   $('sheet-artist').value = sheet.artist;
+  const layout = arranged ? arranged.layout : sheet.layout;
   const letters = sheet.notation === 'letters';
   for (const button of document.querySelectorAll('[data-notation]')) button.setAttribute('aria-checked', String(button.dataset.notation === sheet.notation));
+  for (const button of document.querySelectorAll('[data-layout]')) {
+    button.setAttribute('aria-checked', String(button.dataset.layout === layout));
+    // Letters spell out the tune only, so the staff layout does not apply to them.
+    button.disabled = letters || (button.dataset.layout === 'piano' && arranged ? !arranged.hasChords : false);
+    button.title = letters ? 'Letters show the tune and its chords; switch to Sheet music for a layout.'
+      : button.disabled ? 'SheetSage2 found no chords to write a left hand from.' : '';
+  }
+  $('sheet-hand').value = sheet.hand;
+  $('sheet-hand').disabled = letters || layout !== 'piano';
   $('download-pdf').classList.toggle('hidden', letters);
   if (arranged) $('key-name').value = keyLabel(arranged.key.name, sheet.transpose);
   $('key-down').disabled = sheet.transpose <= -6;
@@ -292,7 +302,9 @@ function syncControls(arranged) {
   heading();
   $('sheet-note').textContent = letters
     ? 'Letters: the tune SheetSage2 heard as note names, with its chords above. Click a bar to play from there; Print makes a paper copy.'
-    : 'The tune SheetSage2 heard, with its chord symbols. Only notes from the recording are written. Click a bar to play from there.';
+    : layout === 'lead'
+    ? 'Lead sheet: the tune SheetSage2 heard, with its chord symbols. Click a bar to play from there.'
+    : 'Piano: the tune SheetSage2 heard, over a left hand written from its chords. Click a bar to play from there.';
 }
 
 /** The page heading: the song's title and artist, or the video title before there is a sheet. */
@@ -368,9 +380,7 @@ async function setupSheet(result) {
   // New sheets show the music the way the reader last chose.
   const {notation} = await chrome.storage.local.get('notation');
   if (token !== drawToken) return;
-  // Older captures saved a Piano layout and its left hand; the sheet no longer writes one.
-  const {layout, hand, ...saved} = clip.sheet || {};
-  sheet = {title: guess.title, artist: guess.artist, transpose: 0, zoom: 1, speed: 1, notation: notation || 'staff', ...saved};
+  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, notation: notation || 'staff', ...clip.sheet};
   $('speed').value = String(sheet.speed);
   syncControls(null);
   await drawSheet();
@@ -382,7 +392,7 @@ async function drawSheet() {
   const container = $('sheet');
   container.setAttribute('aria-busy', 'true');
   try {
-    const arranged = arrange(native, {transpose: sheet.transpose, pickup: timing.pickup});
+    const arranged = arrange(native, {layout: sheet.layout, accompaniment: sheet.hand, transpose: sheet.transpose, pickup: timing.pickup});
     const header = {title: sheet.title.trim() || 'Untitled', composer: sheet.artist.trim(), credit: CREDIT};
     const xml = toMusicXML(arranged, {title: header.title, composer: header.composer, arranger: CREDIT});
     const letters = sheet.notation === 'letters';
@@ -390,6 +400,7 @@ async function drawSheet() {
     if (token !== drawToken) return;
     highlighter?.destroy();
     litNote = null;
+    litStaff = [];
     const words = {...header, note: AI_NOTE};
     if (letters) container.replaceChildren(renderLetters(arranged, words));
     else {
@@ -448,8 +459,45 @@ function updateTransport() {
   icon($('play'), player.playing ? 'pause' : 'play');
 }
 
-/** In letters, lights the note sounding at `time` (in the performance) inside bar `index`. */
+/**
+ * Bar `i` of the engraved sheet as [{el, at, units, rest}]: Verovio draws each staff's notes,
+ * chords and rests in the order the arrangement wrote them, so the two line up one to one.
+ * A staff that does not line up is left out rather than lit wrongly.
+ */
+function drawnNotes(i) {
+  drawn.notes ??= [];
+  if (drawn.notes[i]) return drawn.notes[i];
+  const out = [];
+  const staves = [...(highlighter?.measures[i]?.querySelectorAll('g.staff') ?? [])];
+  const written = drawn.arranged.measures[i]?.staves ?? [];
+  staves.forEach((staff, s) => {
+    const marks = [...staff.querySelectorAll('g.chord, g.note, g.rest, g.mRest')]
+      .filter((el) => !(el.matches('g.note') && el.parentElement.closest('g.chord')));
+    const items = written[s] ?? [];
+    if (marks.length !== items.length) return;
+    items.forEach((item, k) => out.push({el: marks[k], at: item.at, units: item.units, rest: item.rest}));
+  });
+  return (drawn.notes[i] = out);
+}
+
+let litStaff = [];
+/** On the sheet, lights in red every note sounding at `time` (in the performance) inside bar `index`, in both hands. */
+function lightStaff(index, time) {
+  let now = [];
+  const bar = drawn && !drawn.letters && index >= 0 ? player.piece?.bars[index] : null;
+  if (bar) {
+    const unit = ((time - bar.start) / (bar.end - bar.start)) * drawn.arranged.measures[index].length;
+    now = drawnNotes(index).filter((n) => !n.rest && unit >= n.at && unit < n.at + n.units).map((n) => n.el);
+  }
+  if (now.length === litStaff.length && now.every((el, k) => el === litStaff[k])) return;
+  for (const el of litStaff) el.classList.remove('on');
+  for (const el of now) el.classList.add('on');
+  litStaff = now;
+}
+
+/** Lights what is sounding at `time` inside bar `index`: the notes on the sheet, or the note in letters. */
 function lightNote(index, time) {
+  lightStaff(index, time);
   let note = null;
   const bar = drawn?.letters && index >= 0 ? player.piece?.bars[index] : null;
   if (bar) {
@@ -840,6 +888,19 @@ for (const button of document.querySelectorAll('[data-notation]')) {
     drawSheet();
   });
 }
+for (const button of document.querySelectorAll('[data-layout]')) {
+  button.addEventListener('click', () => {
+    if (!sheet || sheet.layout === button.dataset.layout) return;
+    sheet.layout = button.dataset.layout;
+    saveSoon();
+    drawSheet();
+  });
+}
+$('sheet-hand').addEventListener('change', () => {
+  sheet.hand = $('sheet-hand').value;
+  saveSoon();
+  drawSheet();
+});
 for (const [id, step] of [['key-down', -1], ['key-up', 1]]) {
   $(id).addEventListener('click', () => {
     sheet.transpose = Math.max(-6, Math.min(6, sheet.transpose + step));

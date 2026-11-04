@@ -24,8 +24,7 @@ Pick a part of a YouTube video, press Record, and YouTube to Score listens to th
 SheetSage2, an AI transcription model, writes down the tune and the chords, and the score opens right
 beside the video.
 
-- Sheet music: the melody it heard with its chord symbols, engraved in your browser. Nothing is
-  added that is not in the recording.
+- Sheet music: piano score with the melody and chords, engraved in your browser.
 - Letter notes: the tune as note names (C, D, E♭…) with chords above, for anyone who does not read
   staff notation.
 - Play along: press With video and the score follows the video as it plays. Hear the piano, the song,

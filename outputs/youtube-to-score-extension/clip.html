@@ -103,6 +103,19 @@
           <label class="field">Title<input id="sheet-title" type="text" autocomplete="off" spellcheck="false"></label>
           <label class="field">Artist<input id="sheet-artist" type="text" autocomplete="off" spellcheck="false" placeholder="Unknown artist"></label>
           <div class="field">
+            <span id="layout-label">Layout</span>
+            <div class="chips" role="radiogroup" aria-labelledby="layout-label">
+              <button class="chip" type="button" role="radio" data-layout="piano">Piano</button>
+              <button class="chip" type="button" role="radio" data-layout="lead">Lead sheet</button>
+            </div>
+          </div>
+          <label class="field">Left hand
+            <select id="sheet-hand">
+              <option value="pattern">Bass and chords</option>
+              <option value="held">Held chords</option>
+            </select>
+          </label>
+          <div class="field">
             <span id="key-label">Key</span>
             <div class="stepper" role="group" aria-labelledby="key-label">
               <button id="key-down" type="button" aria-label="Transpose down a semitone">−</button>

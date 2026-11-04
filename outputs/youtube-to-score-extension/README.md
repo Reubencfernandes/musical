@@ -70,11 +70,12 @@ The capture page engraves SheetSage2's result as A4 sheet music with
 [Verovio](https://www.verovio.org), with the song's title and artist in the header and
 "Transcribed by SheetSage" under them.
 
-- The score holds only what SheetSage2 heard in the recording: the tune on one staff, at the
-  octave it was heard, with SheetSage2's chord symbols above it, in a treble, treble-8 or bass
-  clef to suit its range. No accompaniment or other notes are added, so playback is the heard
-  tune alone. Drums, the bass line and backing parts are not written out; the chord symbols
-  stand for the harmony.
+- **Piano** (default): the melody in the right hand over a left hand written from SheetSage2's
+  chords: bass then chords on the beats (a waltz in 3/4), or held chords. The melody moves by
+  octaves into the right hand's range. The left hand is an arrangement, not notes heard in the
+  recording.
+- **Lead sheet**: only what SheetSage2 heard: the melody on one staff with chord symbols, in a
+  treble, treble-8 or bass clef to suit its range.
 - Rhythms are split by the beat and beamed by the beat, with ties and accidentals placed as a
   copyist would. SheetSage2's padded first bar becomes a real pickup, chord names are spelled
   for the key (B♭maj7/D, not A#maj7/C##), and its sections become rehearsal marks.

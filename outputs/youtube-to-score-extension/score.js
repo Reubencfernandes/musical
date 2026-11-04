@@ -1,6 +1,6 @@
-// Turns SheetSage2's ABC into a lead sheet: only the tune it heard, with its
-// chord symbols, as MusicXML with beat-grouped rhythms, beams, ties and
-// accidentals. No notes are added that are not in the recording.
+// Turns SheetSage2's ABC into sheet music a pianist expects: the melody over a
+// left hand written from the chords (or a one-staff lead sheet), as MusicXML
+// with beat-grouped rhythms, beams, ties, accidentals and chord symbols.
 
 // ---- reading the native dialect -------------------------------------------
 // A port of parseNative in the Kiku AI web app (outputs/kiku-ai/lib/engrave.ts),
@@ -580,6 +580,20 @@ function notate(events, measure, grid) {
 
 // ---- arranging --------------------------------------------------------------
 
+/** Octaves that move a part into a range, weighted by how long notes sound outside it. */
+function octaveShift(notes, low, high) {
+  let best = 0;
+  let cost = Infinity;
+  for (const k of [0, 1, -1, 2, -2]) {
+    const c = notes.reduce((sum, n) => {
+      const p = n.pitch + 12 * k;
+      return sum + (p < low ? low - p : p > high ? p - high : 0) * n.units;
+    }, 0);
+    if (c < cost) { best = k; cost = c; }
+  }
+  return best;
+}
+
 /** Treble for most melodies, treble-8 for low voices, bass below that. */
 function clefFor(pitches) {
   if (!pitches.length) return {sign: 'G', line: 2};
@@ -588,16 +602,100 @@ function clefFor(pitches) {
   return middle >= 59 ? {sign: 'G', line: 2} : middle >= 47 ? {sign: 'G', line: 2, octave: -1} : {sign: 'F', line: 4};
 }
 
+function place(pc, low, high) {
+  for (let octave = 0; octave <= 8; octave++) {
+    const m = midiOf({...pc, octave});
+    if (m >= low && m <= high) return {...pc, octave};
+  }
+  return {...pc, octave: 3};
+}
+
+/** Close voicings of up to three chord tones above the bass, nearest the last one. */
+function voice(chord, bassMidi, previous) {
+  let tones = chord.tones;
+  const bassPc = pcOf(chord.bass || chord.root);
+  if (tones.length > 3) tones = tones.filter((t) => pcOf(t) !== bassPc);
+  if (tones.length > 3) tones = tones.filter((t) => t.steps !== 4);
+  tones = tones.slice(0, 3);
+  let best = null;
+  for (let r = 0; r < tones.length; r++) {
+    const order = [...tones.slice(r), ...tones.slice(0, r)];
+    for (let octave = 2; octave <= 4; octave++) {
+      const stack = [];
+      for (const t of order) {
+        let p = {letter: t.letter, alter: t.alter, octave: stack.length ? stack[stack.length - 1].octave : octave};
+        while (stack.length && midiOf(p) <= midiOf(stack[stack.length - 1])) p = {...p, octave: p.octave + 1};
+        stack.push(p);
+      }
+      const values = stack.map(midiOf);
+      const lowest = Math.min(...values);
+      const highest = Math.max(...values);
+      if (lowest <= bassMidi + 2 || lowest < 46 || highest > 64) continue;
+      const centre = values.reduce((a, b) => a + b, 0) / values.length;
+      const cost = Math.abs(centre - (previous ?? 55));
+      if (!best || cost < best.cost) best = {stack, centre, cost};
+    }
+  }
+  return best;
+}
+
+/** The left hand under one measure, from the chords sounding in it. */
+function leftHand(measure, chords, grid, style, state) {
+  const info = meterInfo(measure.meter, grid);
+  const end = measure.start + measure.length;
+  let active = null;
+  const changes = [];
+  for (const c of chords) {
+    if (c.time <= measure.start) { active = c; continue; }
+    if (c.time >= end) break;
+    // The accompaniment changes on the nearest beat of the bar.
+    const at = Math.round((measure.offset + c.time - measure.start) / info.beat) * info.beat - measure.offset;
+    if (at <= 0) active = c;
+    else if (at < measure.length) {
+      if (changes.length && changes[changes.length - 1].at === at) changes[changes.length - 1].chord = c;
+      else changes.push({at, chord: c});
+    }
+  }
+  const segments = [{at: 0, chord: active}, ...changes];
+  const events = [];
+  segments.forEach((segment, i) => {
+    const stop = i + 1 < segments.length ? segments[i + 1].at : measure.length;
+    const chord = segment.chord?.chord;
+    if (!chord || stop <= segment.at) return;
+    const bass = place(chord.bass || chord.root, 41, 52);
+    const voicing = voice(chord, midiOf(bass), state.centre);
+    if (voicing) state.centre = voicing.centre;
+    const stack = voicing ? voicing.stack : [];
+    if (style === 'held') {
+      events.push({at: segment.at, units: stop - segment.at, pitches: [bass, ...stack]});
+      return;
+    }
+    // 4/4 and 12/8 alternate the bass: root on beat one, the fifth on beat three.
+    const fifth = chord.tones.find((t) => t.steps === 4);
+    const alternate = !!info.middle;
+    for (let at = segment.at, k = 0; at < stop; at += info.beat, k++) {
+      const beatInBar = Math.round((measure.offset + at) / info.beat);
+      const units = Math.min(info.beat, stop - at);
+      let pitches;
+      if (k === 0) pitches = [bass];
+      else if (alternate && beatInBar % 2 === 0 && fifth) pitches = [place(fifth, 41, 52)];
+      else pitches = stack.length ? stack : [bass];
+      events.push({at, units, pitches});
+    }
+  });
+  return events;
+}
+
 const SECTION_NAMES = {inst: 'Instrumental', instrumental: 'Instrumental', prechorus: 'Pre-chorus', 'pre-chorus': 'Pre-chorus'};
 const sectionName = (text) => SECTION_NAMES[text.toLowerCase()] || text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
- * Lays out a read score as a lead sheet: only the notes SheetSage2 heard, on
- * one staff at the octave it heard them, with its chord symbols. Nothing is
- * added, so the sheet plays back only what is in the recording.
+ * Arranges a read score.
+ *   layout: 'piano' (melody over a left hand from the chords) or 'lead' (one staff)
+ *   accompaniment: 'pattern' (bass then chords on the beats) or 'held' (one chord per change)
  *   transpose: semitones; pickup: grid units of a pickup bar SheetSage2 padded out
  */
-export function arrange(score, {transpose = 0, pickup = 0} = {}) {
+export function arrange(score, {layout = 'piano', accompaniment = 'pattern', transpose = 0, pickup = 0} = {}) {
   const {grid, bars, vocal, ins} = score;
   const shift = transposition(bars[0].key, transpose);
   const lift = (p) => (shift.semitones ? move(p, shift.steps, shift.semitones) : p);
@@ -611,10 +709,17 @@ export function arrange(score, {transpose = 0, pickup = 0} = {}) {
   const chords = [...byTime].sort((a, b) => a[0] - b[0])
     .map(([time, symbol]) => ({time, chord: readChord(symbol, keyAt(time), shift)}))
     .filter((c) => c.chord);
+  const hasChords = chords.length > 0;
+  const piano = layout === 'piano' && hasChords;
 
   // The melody: the vocal line wherever it sings in a bar, the instrumental line elsewhere.
   const sources = bars.map((bar) => (overlaps(vocal.notes, bar.start, bar.start + bar.length) ? vocal
     : overlaps(ins.notes, bar.start, bar.start + bar.length) ? ins : null));
+  const octaves = new Map();
+  for (const source of [vocal, ins]) {
+    const used = source.notes.filter((n) => bars.some((bar, i) => sources[i] === source && n.start < bar.start + bar.length && end(n) > bar.start));
+    octaves.set(source, piano ? octaveShift(used.map((n) => ({...n, pitch: n.pitch + shift.semitones})), 60, 84) : 0);
+  }
   const melody = [];
   bars.forEach((bar, i) => {
     const source = sources[i];
@@ -626,7 +731,7 @@ export function arrange(score, {transpose = 0, pickup = 0} = {}) {
       melody.push({
         start: Math.max(note.start, bar.start),
         end: Math.min(end(note), barEnd),
-        pitch: spelled,
+        pitch: {...spelled, octave: spelled.octave + octaves.get(source)},
         tieIn: note.start < bar.start && sources[i - 1] === source,
         tieOut: end(note) > barEnd && sources[i + 1] === source,
       });
@@ -673,7 +778,8 @@ export function arrange(score, {transpose = 0, pickup = 0} = {}) {
     }
   }
 
-  // One staff: the melody's events in each measure.
+  // Staves: melody events per measure, and the left hand when there is one.
+  const state = {centre: null};
   for (const m of measures) {
     const stop = m.start + m.length;
     const tune = melody.filter((n) => n.start < stop && n.end > m.start).map((n) => ({
@@ -684,10 +790,12 @@ export function arrange(score, {transpose = 0, pickup = 0} = {}) {
       tieOut: n.tieOut || n.end > stop,
     }));
     m.staves = [notate(tune, m, grid)];
+    if (piano) m.staves.push(notate(leftHand(m, chords, grid, accompaniment, state), m, grid));
   }
 
-  const clefs = [clefFor(melody.map((n) => midiOf(n.pitch)))];
-  return {grid, tempo: score.tempo, measures, clefs, key: measures[0].key};
+  const pitches = melody.map((n) => midiOf(n.pitch));
+  const clefs = piano ? [{sign: 'G', line: 2}, {sign: 'F', line: 4}] : [clefFor(pitches)];
+  return {grid, tempo: score.tempo, measures, clefs, layout: piano ? 'piano' : 'lead', hasChords, key: measures[0].key};
 }
 
 // ---- MusicXML -------------------------------------------------------------

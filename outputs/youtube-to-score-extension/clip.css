@@ -190,7 +190,11 @@ article { display: grid; gap: 22px; align-content: start; min-width: 0; }
 /* Page numbers sit bottom right; the AI note runs along the bottom left. */
 .page-number { position: absolute; bottom: 3.6%; right: 6.7%; text-align: right; font: 13px/1 "Times New Roman", Times, serif; color: #222; }
 .sheet g.measure { cursor: pointer; }
-.sheet rect.now { fill: var(--now); }
+/* The bar being played is marked but not drawn: it only keeps the page following; the red notes show what plays.
+   Verovio strokes every rect through an id-scoped rule, which only !important outranks. */
+.sheet rect.now { fill: none !important; stroke: none !important; }
+/* The notes sounding now, in red on the white page (both themes); Verovio strokes stems with currentColor. */
+.sheet svg g.on { color: #d42a1c; fill: #d42a1c; }
 
 .pages { display: grid; gap: 12px; }
 .pages:empty { display: none; }

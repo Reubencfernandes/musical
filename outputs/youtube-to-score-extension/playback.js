@@ -31,7 +31,7 @@ class SampleCache {
 
 /**
  * The notes and bar times of an arranged score. Tied notes sound once, for
- * their whole length; any staff below the first plays a little softer.
+ * their whole length; the melody sits a little above the left hand.
  *
  * By default it keeps the written tempo. Given `times` (each bar's {start, end}
  * in the recording), every bar is stretched to when it really sounds, so the
