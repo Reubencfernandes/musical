@@ -19,17 +19,26 @@ let live = 0;
 let stopWave = null;
 
 let shown = '';
+// store:strip-start Everything between these markers is the optional yt-dlp helper, which the Chrome Web Store build (store/build.py) leaves out.
 // The yt-dlp helper on this PC (native/), when it is installed: its yt-dlp version,
 // '' when it is not, and undefined until the first probe answers.
 const HOST = 'com.kiku.youtube_to_score';
 let helper;
-let settingUp = null;
 let fetching = null;
+// store:strip-end
+let settingUp = null;
 let waitingForClick = 0;
+// Whether the page plays copy-protected media, which records as silence: on the Record view and while recording.
+let blocked = false;
+let guard = 0;
+let recBlocked = false;
+let silenceChecked = 0;
 function show(view) {
   shown = view;
   for (const v of views) $(v).classList.toggle('hidden', v !== view);
   if (view !== 'setup') clearInterval(poll);
+  if (view !== 'anywhere') clearInterval(guard);
+  if (view !== 'recording') { recBlocked = false; silenceChecked = 0; showRecBlocked(); }
   if (view === 'recording') stopWave ??= animateWave($('rec-wave'), () => live);
   else if (stopWave) { stopWave(); stopWave = null; }
 }
@@ -64,16 +73,51 @@ function captureError(err) {
 
 const site = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
+/** Whether the page plays its media through copy protection (encrypted media), which a recording hears as silence. */
+async function protectedMedia(tabId) {
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: {tabId},
+      func: () => [...document.querySelectorAll('video, audio')].some((m) => m.mediaKeys),
+    });
+    return !!frame?.result;
+  } catch {
+    return false;
+  }
+}
+
+/** Warns on the Record view when the page will not give a recording any sound; checked again as the page starts playing. */
+async function checkBlocked() {
+  if (shown !== 'anywhere') return;
+  const found = await protectedMedia(tab.id);
+  if (shown !== 'anywhere') return;
+  blocked = found;
+  $('blocked').classList.toggle('hidden', !found);
+  $('record-tab').classList.toggle('primary', !found);
+  $('record-tab').textContent = found ? 'Try anyway' : 'Record';
+}
+
+/** While a recording waits for sound, says so plainly when the page's copy protection is the reason. */
+function showRecBlocked() {
+  $('rec-blocked').classList.toggle('hidden', !recBlocked);
+}
+
 /** A page that is not a YouTube video: record whatever it plays. */
 async function showTab() {
   if (!tab?.url) {
     // Chrome hides a page's address until the icon is clicked there; after a click it is a page no extension may record.
     const {invoked} = await chrome.storage.session.get('invoked').catch(() => ({}));
-    return show(invoked?.tabId === tab?.id ? 'elsewhere' : 'locked');
+    if (invoked?.tabId === tab?.id) return show('elsewhere');
+    $('locked-ask').classList.toggle('hidden', !waitingForClick);
+    return show('locked');
   }
   if (!/^https?:/.test(tab.url) || /^https:\/\/chromewebstore\.google\.com\//.test(tab.url)) return show('elsewhere');
   show('anywhere');
   showSite();
+  // A player sets up its copy protection when it starts, so the page is checked again every few seconds.
+  clearInterval(guard);
+  guard = setInterval(checkBlocked, 2000);
+  await checkBlocked();
 }
 
 function showSite() {
@@ -205,11 +249,13 @@ async function setUp() {
   render();
   showMethods();
   poll = setInterval(refreshInfo, 500);
+  // store:strip-start
   probeHelper().then((version) => {
     helper = version || '';
     chrome.storage.session.set({helper}).catch(() => {});
     showMethods();
   });
+  // store:strip-end
 }
 
 function renderRecording(s) {
@@ -219,10 +265,22 @@ function renderRecording(s) {
   $('rec-time').textContent = s.free ? `${clock(s.captured)} · up to ${clock(s.seconds)}` : `${clock(s.captured)} / ${clock(s.seconds)}`;
   // Peaks arrive four times a second; the wave eases between them every frame.
   live = s.live ? Math.min(1, Math.sqrt(s.peak || 0) * 1.4) : 0;
+  // Any website records from its first sound; on a copy-protected page that never comes.
+  const quiet = s.free && !s.live;
+  if (!quiet) recBlocked = false;
+  else if (Date.now() - silenceChecked > 2000) {
+    silenceChecked = Date.now();
+    protectedMedia(s.tabId).then((found) => {
+      if (shown === 'recording') { recBlocked = found; showRecBlocked(); }
+    });
+  }
+  showRecBlocked();
 }
 
 async function renderState(capture) {
+  // store:strip-start
   if (fetching) return;
+  // store:strip-end
   if (capture?.status === 'recording') return renderRecording(capture);
   // A recording from this tab just finished: show its score here in the panel.
   if (capture?.status === 'idle' && capture.lastClip && capture.lastTab === tab?.id && shown === 'recording') {
@@ -269,6 +327,7 @@ async function record(event) {
   }
 }
 
+// store:strip-start
 /** Asks whether the yt-dlp helper is installed; resolves to its yt-dlp version, or null. */
 function probeHelper() {
   return new Promise((resolve) => {
@@ -288,7 +347,11 @@ function probeHelper() {
   });
 }
 
+// store:strip-end
+
+/** Offers the helper's faster fetch beside Record when it is installed; the store build keeps Record alone. */
 function showMethods() {
+  // store:strip-start
   // Until the helper answers, a stand-in holds the buttons' place, so they don't jump.
   const probing = helper === undefined;
   $('methods-loading').classList.toggle('hidden', !probing);
@@ -300,8 +363,10 @@ function showMethods() {
   $('method-note').textContent = can
     ? `Get audio now fetches just this part with yt-dlp (${helper}) on this PC, in seconds. Record captures it from the video in real time instead.`
     : 'The video plays while it records, so a part takes as long as it lasts. Ads and buffering are left out, and the sheet music opens when it finishes.';
+  // store:strip-end
 }
 
+// store:strip-start
 /** Fetches the chosen part with yt-dlp on this PC, saves it as a capture and opens its score. */
 async function fetchNow() {
   setupError('');
@@ -357,12 +422,27 @@ async function fetchNow() {
     $('stop').classList.remove('hidden');
   }
 }
+// store:strip-end
+
+/** The icon was clicked on this tab: record now if Record asked for the click, else show the Record view. */
+async function unlocked() {
+  const waiting = waitingForClick && Date.now() - waitingForClick < 120000;
+  waitingForClick = 0;
+  tab = await chrome.tabs.get(tab.id).catch(() => tab);
+  if (WATCH.test(tab.url || '')) return location.reload();
+  show('loading');
+  await showTab();
+  // A copy-protected site would record only silence: show why instead of starting.
+  if (waiting && shown === 'anywhere' && !blocked) recordTab();
+}
 
 async function init() {
   [tab] = await chrome.tabs.query({active: true, currentWindow: true});
   renderAccount();
+  // store:strip-start
   // The last probe's answer shows at once; a fresh probe confirms it.
   ({helper} = await chrome.storage.session.get('helper').catch(() => ({})));
+  // store:strip-end
   listClips().then((clips) => { $('captures-count').textContent = clips.length ? String(clips.length) : ''; }).catch(() => {});
 
   const {capture} = await chrome.storage.session.get('capture');
@@ -374,7 +454,7 @@ async function init() {
     const invoked = area === 'session' && changes.invoked?.newValue;
     if (invoked?.tabId !== tab?.id) return;
     // The click also lets the panel see the page's address: show what can be recorded there.
-    if (shown === 'locked') location.reload();
+    if (shown === 'locked' || shown === 'elsewhere') return unlocked();
     if (waitingForClick && Date.now() - waitingForClick < 120000 && (shown === 'setup' || shown === 'anywhere')) {
       waitingForClick = 0;
       setupError('');
@@ -411,6 +491,7 @@ $('chapter').addEventListener('change', () => {
 });
 $('stop').addEventListener('click', () => chrome.runtime.sendMessage({target: 'background', type: 'stop'}));
 $('cancel').addEventListener('click', () => {
+  // store:strip-start
   if (fetching) {
     const port = fetching;
     fetching = null;
@@ -418,10 +499,18 @@ $('cancel').addEventListener('click', () => {
     show('setup');
     return;
   }
+  // store:strip-end
   chrome.runtime.sendMessage({target: 'background', type: 'cancel'});
 });
+// store:strip-start
 $('fetch').addEventListener('click', fetchNow);
+// store:strip-end
 $('record-tab').addEventListener('click', recordTab);
+// Before the icon click there is nothing to record yet: ask for the click, then record.
+$('record-locked').addEventListener('click', () => {
+  waitingForClick = Date.now();
+  $('locked-ask').classList.remove('hidden');
+});
 $('dismiss').addEventListener('click', () => chrome.runtime.sendMessage({target: 'background', type: 'dismiss'}));
 // Chrome's side panel ignores window.close(); it has its own close call.
 $('close-panel').addEventListener('click', async () => {
@@ -435,6 +524,11 @@ chrome.tabs.onActivated.addListener(({windowId}) => { if (windowId === tab?.wind
 chrome.tabs.onUpdated.addListener((tabId, change, fresh) => {
   if (tabId !== tab?.id) return;
   if (change.url) return restart();
+  // Without the icon click Chrome hides a page's address, so another page loading shows only as a status.
+  // Loading it withdraws the click, so the panel shows the page again as Chrome now lets it see it.
+  if (change.status && shown === 'anywhere') {
+    chrome.tabs.get(tabId).then((now) => { if (now.url !== tab.url) restart(); }, restart);
+  }
   // Music sites put the playing song in the title.
   if (shown === 'anywhere' && (change.title || change.favIconUrl)) { tab = fresh; showSite(); }
 });

@@ -41,9 +41,15 @@
     <a class="side-brand" href="clip.html"><img src="icons/32.png" alt="" width="22" height="22"><span>YouTube to Score</span></a>
     <div class="side-head">
       <h2>Captures</h2><span id="clip-count" class="count"></span>
+      <button id="select-toggle" class="text-button select-toggle hidden" type="button" aria-pressed="false" aria-controls="clips">Select</button>
       <button id="sidebar-close" class="icon-button side-close" type="button" aria-label="Hide captures" title="Hide captures"><svg width="18" height="18" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
     </div>
     <label id="search-wrap" class="side-search hidden"><svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><input id="clip-search" type="search" placeholder="Search captures" autocomplete="off" spellcheck="false" aria-label="Search captures"></label>
+    <div id="select-bar" class="select-bar hidden" role="toolbar" aria-label="Selected captures">
+      <label class="check select-all"><input id="select-all" type="checkbox">Select all</label>
+      <span id="select-count" class="small muted" aria-live="polite">None selected</span>
+      <button id="delete-selected" class="pill delete-selected" type="button" disabled><svg width="14" height="14" aria-hidden="true"><use href="#i-trash"/></svg><span id="delete-label">Delete</span></button>
+    </div>
     <ul id="clips" class="clips"></ul>
     <a class="pill primary side-record panel-only" href="popup.html"><svg width="16" height="16" aria-hidden="true"><use href="#i-record"/></svg>Record a part</a>
     <p class="side-note muted small">Record more from YouTube, or any site that plays music, with the toolbar button.</p>
@@ -65,7 +71,9 @@
           <p class="muted small meta-line"><span id="range"></span> · <a id="source" target="_blank" rel="noopener">Open on YouTube</a></p>
         </div>
         <div class="heading-actions">
+          <!-- store:strip-start: the Chrome Web Store build has no audio download -->
           <a id="download-mp3" class="pill" download><svg width="16" height="16"><use href="#i-download"/></svg>MP3</a>
+          <!-- store:strip-end -->
           <button id="delete" class="text-button danger" type="button">Delete capture</button>
         </div>
       </header>
@@ -94,19 +102,6 @@
         <div id="sheet-settings" class="score-settings">
           <label class="field">Title<input id="sheet-title" type="text" autocomplete="off" spellcheck="false"></label>
           <label class="field">Artist<input id="sheet-artist" type="text" autocomplete="off" spellcheck="false" placeholder="Unknown artist"></label>
-          <div class="field">
-            <span id="layout-label">Layout</span>
-            <div class="chips" role="radiogroup" aria-labelledby="layout-label">
-              <button class="chip" type="button" role="radio" data-layout="piano">Piano</button>
-              <button class="chip" type="button" role="radio" data-layout="lead">Lead sheet</button>
-            </div>
-          </div>
-          <label class="field">Left hand
-            <select id="sheet-hand">
-              <option value="pattern">Bass and chords</option>
-              <option value="held">Held chords</option>
-            </select>
-          </label>
           <div class="field">
             <span id="key-label">Key</span>
             <div class="stepper" role="group" aria-labelledby="key-label">

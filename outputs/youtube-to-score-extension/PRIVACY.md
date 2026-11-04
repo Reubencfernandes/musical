@@ -11,7 +11,7 @@ plays in another tab you choose, and turns it into sheet music. This page says w
   sites, the address of the page's icon), and the sheet music
   made from it. They are kept in the extension's own storage (IndexedDB) on your computer until you
   delete them.
-- **Your settings**: the score layout, letters or sheet music, the play-along sound, and the part you
+- **Your settings**: the score's title, artist, key and zoom, letters or sheet music, the play-along sound, and the part you
   were choosing.
 - **Your Hugging Face sign-in**, if you sign in: an access token, its expiry, your username, display
   name and profile picture address, kept in `chrome.storage.local`. **Sign out** removes it.
@@ -43,10 +43,11 @@ plays in another tab you choose, and turns it into sheet music. This page says w
   computer.
 - It loads no code from the internet. Everything it runs ships inside the extension.
 
-## The optional yt-dlp helper
+## The optional yt-dlp helper (GitHub version only)
 
 If you install the helper in `native/` on your own PC, the extension asks it to download the part you
 chose with yt-dlp. That runs on your computer, and the helper is not part of the release download.
+The Chrome Web Store version has no helper and cannot talk to one.
 
 ## Contact
 

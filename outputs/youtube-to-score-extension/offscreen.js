@@ -87,7 +87,8 @@ async function finish() {
   const seconds = done.frames / done.ctx.sampleRate;
   if (seconds < MIN_SECONDS) {
     send({type: 'failed', error: done.free
-      ? 'Nothing was heard. Play the music in the tab after you press Record.'
+      ? 'Nothing was heard. Play the music in the tab after you press Record. '
+        + 'Pages that protect their media from copying give a recording only silence, so they cannot be recorded.'
       : 'Nothing was recorded. Make sure the video plays after you press Record.'});
     return;
   }

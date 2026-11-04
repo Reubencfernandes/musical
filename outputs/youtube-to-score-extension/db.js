@@ -29,6 +29,8 @@ async function run(mode, work) {
 export const putClip = (clip) => run('readwrite', (store) => store.put(clip));
 export const getClip = (id) => run('readonly', (store) => store.get(id));
 export const deleteClip = (id) => run('readwrite', (store) => store.delete(id));
+/** Deletes several captures in one transaction, so a failure leaves all of them in place. */
+export const deleteClips = (ids) => run('readwrite', (store) => { for (const id of ids) store.delete(id); });
 
 /** Every capture, newest first, without loading its audio. */
 export async function listClips() {

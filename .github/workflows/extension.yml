@@ -47,11 +47,20 @@ jobs:
         working-directory: outputs/youtube-to-score-extension
         # The optional yt-dlp helper in native/ stays out of the download, as its
         # README asks; it remains in the repository for people who set it up.
-        run: zip -r -X -q "$GITHUB_WORKSPACE/kiku-youtube-to-score.zip" . -x 'native/*'
+        run: zip -r -X -q "$GITHUB_WORKSPACE/kiku-youtube-to-score.zip" . -x 'native/*' 'store/*'
       - uses: actions/upload-artifact@v4
         with:
           name: kiku-youtube-to-score
           path: kiku-youtube-to-score.zip
+      - name: Package for the Chrome Web Store
+        working-directory: outputs/youtube-to-score-extension
+        # No yt-dlp helper and no MP3 download: the store does not accept extensions
+        # that download copyrighted media. store/build.py checks nothing is left over.
+        run: python3 store/build.py "$GITHUB_WORKSPACE/kiku-youtube-to-score-store.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiku-youtube-to-score-store
+          path: kiku-youtube-to-score-store.zip
       - name: Publish to the extension-latest release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2

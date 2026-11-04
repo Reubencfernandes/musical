@@ -12,6 +12,13 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({windowId: tab.windowId}).catch(() => {});
   chrome.storage.session.set({invoked: {tabId: tab.id, at: Date.now()}});
 });
+// Chrome withdraws the click's permission when the tab loads another page, so the
+// click no longer counts there; the panel then asks for a new one.
+chrome.tabs.onUpdated.addListener(async (tabId, change) => {
+  if (change.status !== 'loading') return;
+  const {invoked} = await chrome.storage.session.get('invoked').catch(() => ({}));
+  if (invoked?.tabId === tabId && Date.now() - invoked.at > 1000) chrome.storage.session.remove('invoked').catch(() => {});
+});
 // Before Hugging Face sign-in the panel had a Space name and a pasted token; signing in replaced both.
 chrome.runtime.onInstalled.addListener(() => chrome.storage.local.remove(['space', 'token']).catch(() => {}));
 

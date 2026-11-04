@@ -1,4 +1,4 @@
-import {getClip, putClip, deleteClip, listClips} from './db.js';
+import {getClip, putClip, deleteClip, deleteClips, listClips} from './db.js';
 import {transcribe, DEFAULT_SPACE} from './sheetsage.js';
 import {clock} from './time.js';
 import {readScore, readEvents, arrange, toMusicXML, pickupUnits} from './score.js';
@@ -110,6 +110,11 @@ const partText = (c) => (c.free ? `${clock(c.seconds)} from ${site(c.url)}` : `$
 const site = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'a website'; } };
 
 let clips = [];
+// Select mode: each capture gets a checkbox, and the bar above the list deletes the ticked ones.
+let selecting = false;
+const selected = new Set();
+let shownIds = [];
+
 async function renderList() {
   clips = await listClips();
   const count = String(clips.length || '');
@@ -117,22 +122,115 @@ async function renderList() {
   $('tab-count').textContent = count;
   // Searching helps once the list is longer than a screen.
   $('search-wrap').classList.toggle('hidden', clips.length < 7);
-  showList();
+  $('select-toggle').classList.toggle('hidden', !clips.length);
+  if (selecting && !clips.length) setSelecting(false);
+  else showList();
 }
+
+function setSelecting(on, redraw = true) {
+  selecting = on;
+  selected.clear();
+  $('select-toggle').textContent = on ? 'Cancel' : 'Select';
+  $('select-toggle').setAttribute('aria-pressed', String(on));
+  $('select-bar').classList.toggle('hidden', !on);
+  if (!redraw) return;
+  showList();
+  if (on) $('select-all').focus();
+}
+
+let armTimer = 0;
+function disarm() {
+  clearTimeout(armTimer);
+  $('delete-selected').classList.remove('armed');
+}
+
+/** The bar's count, Select all box and Delete button, from what is ticked. */
+function syncSelection() {
+  disarm();
+  const n = selected.size;
+  const all = shownIds.length > 0 && shownIds.every((id) => selected.has(id));
+  $('select-all').checked = all;
+  $('select-all').indeterminate = n > 0 && !all;
+  $('select-count').textContent = n ? `${n} selected` : 'None selected';
+  $('delete-selected').disabled = !n;
+  $('delete-label').textContent = n > 1 && n === clips.length ? `Delete all ${n}` : n ? `Delete ${n}` : 'Delete';
+}
+
+$('select-toggle').addEventListener('click', () => setSelecting(!selecting));
+$('select-all').addEventListener('change', () => {
+  // Ticks every capture the search shows, not ones it hides.
+  if ($('select-all').checked) for (const id of shownIds) selected.add(id);
+  else selected.clear();
+  for (const box of $('clips').querySelectorAll('.pick')) {
+    box.checked = selected.has(box.value);
+    box.closest('.clip-item').classList.toggle('picked', box.checked);
+  }
+  syncSelection();
+});
+// The first click asks, a second within 3 seconds deletes, like each capture's own delete button.
+$('delete-selected').addEventListener('click', async () => {
+  const button = $('delete-selected');
+  const ids = [...selected];
+  if (!ids.length) return;
+  if (!button.classList.contains('armed')) {
+    button.classList.add('armed');
+    $('delete-label').textContent = ids.length === clips.length && ids.length > 1
+      ? `Delete all ${ids.length}?` : `Delete ${ids.length} capture${ids.length > 1 ? 's' : ''}?`;
+    armTimer = setTimeout(syncSelection, 3000);
+    return;
+  }
+  disarm();
+  button.disabled = true;
+  const open = !!clip && ids.includes(clip.id);
+  if (open) job?.abort();
+  try {
+    await deleteClips(ids);
+  } catch (err) {
+    $('select-count').textContent = `Could not delete: ${err.message}`;
+    button.disabled = false;
+    return;
+  }
+  if (open) return location.replace(here());
+  setSelecting(false, false);
+  renderList();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && selecting) setSelecting(false);
+});
 
 function showList() {
   const list = $('clips');
   const query = $('clip-search').value.trim().toLowerCase();
   const shown = [];
+  shownIds = [];
   for (const c of clips) {
     const guess = songInfo(c.title, c.channel);
     const title = (c.sheet?.title ?? guess.title).trim() || c.title || 'Untitled';
     const artist = (c.sheet?.artist ?? guess.artist).trim();
     if (query && ![title, artist, c.title].some((t) => t?.toLowerCase().includes(query))) continue;
-    const a = document.createElement('a');
-    a.href = here({id: c.id});
+    shownIds.push(c.id);
+    const li = document.createElement('li');
+    li.className = 'clip-item';
+    // In select mode the card is a label for its checkbox, so a click ticks it instead of opening it.
+    const a = document.createElement(selecting ? 'label' : 'a');
+    a.className = 'clip-card';
     a.title = c.title || title;
-    if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
+    if (selecting) {
+      const box = Object.assign(document.createElement('input'), {type: 'checkbox', className: 'pick', value: c.id, checked: selected.has(c.id)});
+      box.setAttribute('aria-label', `Select ${title}`);
+      box.addEventListener('change', () => {
+        if (box.checked) selected.add(c.id);
+        else selected.delete(c.id);
+        li.classList.toggle('picked', box.checked);
+        syncSelection();
+      });
+      li.classList.toggle('picked', box.checked);
+      a.classList.add('picking');
+      a.append(box);
+    } else {
+      a.href = here({id: c.id});
+      if (c.id === clip?.id) a.setAttribute('aria-current', 'page');
+    }
     const thumb = span('thumb', '');
     const src = c.free ? c.icon : thumbnail(c.url);
     if (src) {
@@ -150,10 +248,14 @@ function showList() {
     if (c.scored) meta.append(span('tag', 'Score'));
     text.append(meta);
     a.append(thumb, text);
-    const li = document.createElement('li');
-    li.className = 'clip-item';
-    li.append(a, deleteButton(c));
+    li.append(a);
+    if (!selecting) li.append(deleteButton(c));
     shown.push(li);
+  }
+  if (selecting) {
+    // A capture the search now hides is no longer ticked, so Delete only removes what is on screen.
+    for (const id of selected) if (!shownIds.includes(id)) selected.delete(id);
+    syncSelection();
   }
   if (!shown.length) {
     const li = document.createElement('li');
@@ -178,18 +280,8 @@ function keyLabel(name, transpose) {
 function syncControls(arranged) {
   $('sheet-title').value = sheet.title;
   $('sheet-artist').value = sheet.artist;
-  const layout = arranged ? arranged.layout : sheet.layout;
   const letters = sheet.notation === 'letters';
   for (const button of document.querySelectorAll('[data-notation]')) button.setAttribute('aria-checked', String(button.dataset.notation === sheet.notation));
-  for (const button of document.querySelectorAll('[data-layout]')) {
-    button.setAttribute('aria-checked', String(button.dataset.layout === layout));
-    // Letters spell out the tune only, so the staff layout does not apply to them.
-    button.disabled = letters || (button.dataset.layout === 'piano' && arranged ? !arranged.hasChords : false);
-    button.title = letters ? 'Letters show the tune and its chords; switch to Sheet music for a layout.'
-      : button.disabled ? 'SheetSage2 found no chords to write a left hand from.' : '';
-  }
-  $('sheet-hand').value = sheet.hand;
-  $('sheet-hand').disabled = letters || layout !== 'piano';
   $('download-pdf').classList.toggle('hidden', letters);
   if (arranged) $('key-name').value = keyLabel(arranged.key.name, sheet.transpose);
   $('key-down').disabled = sheet.transpose <= -6;
@@ -200,9 +292,7 @@ function syncControls(arranged) {
   heading();
   $('sheet-note').textContent = letters
     ? 'Letters: the tune SheetSage2 heard as note names, with its chords above. Click a bar to play from there; Print makes a paper copy.'
-    : layout === 'lead'
-    ? 'Lead sheet: the tune SheetSage2 heard, with its chord symbols. Click a bar to play from there.'
-    : 'Piano: the tune SheetSage2 heard, over a left hand written from its chords. Click a bar to play from there.';
+    : 'The tune SheetSage2 heard, with its chord symbols. Only notes from the recording are written. Click a bar to play from there.';
 }
 
 /** The page heading: the song's title and artist, or the video title before there is a sheet. */
@@ -278,7 +368,9 @@ async function setupSheet(result) {
   // New sheets show the music the way the reader last chose.
   const {notation} = await chrome.storage.local.get('notation');
   if (token !== drawToken) return;
-  sheet = {title: guess.title, artist: guess.artist, layout: 'piano', hand: 'pattern', transpose: 0, zoom: 1, speed: 1, notation: notation || 'staff', ...clip.sheet};
+  // Older captures saved a Piano layout and its left hand; the sheet no longer writes one.
+  const {layout, hand, ...saved} = clip.sheet || {};
+  sheet = {title: guess.title, artist: guess.artist, transpose: 0, zoom: 1, speed: 1, notation: notation || 'staff', ...saved};
   $('speed').value = String(sheet.speed);
   syncControls(null);
   await drawSheet();
@@ -290,7 +382,7 @@ async function drawSheet() {
   const container = $('sheet');
   container.setAttribute('aria-busy', 'true');
   try {
-    const arranged = arrange(native, {layout: sheet.layout, accompaniment: sheet.hand, transpose: sheet.transpose, pickup: timing.pickup});
+    const arranged = arrange(native, {transpose: sheet.transpose, pickup: timing.pickup});
     const header = {title: sheet.title.trim() || 'Untitled', composer: sheet.artist.trim(), credit: CREDIT};
     const xml = toMusicXML(arranged, {title: header.title, composer: header.composer, arranger: CREDIT});
     const letters = sheet.notation === 'letters';
@@ -442,9 +534,11 @@ function render() {
   // Playing along needs YouTube's player to follow; other sites have none to control.
   $('with-video').classList.toggle('hidden', !!clip.free);
 
+  // store:strip-start (the Chrome Web Store build has no audio download)
   const audio = blobUrl(clip.audio);
   $('download-mp3').href = audio;
   $('download-mp3').download = `${safeName(clip.title)} (${clock(clip.start).replace(/:/g, '.')}).mp3`;
+  // store:strip-end
 
   const tooShort = clip.seconds < 5;
   $('transcribe').disabled = tooShort;
@@ -746,19 +840,6 @@ for (const button of document.querySelectorAll('[data-notation]')) {
     drawSheet();
   });
 }
-for (const button of document.querySelectorAll('[data-layout]')) {
-  button.addEventListener('click', () => {
-    if (!sheet || sheet.layout === button.dataset.layout) return;
-    sheet.layout = button.dataset.layout;
-    saveSoon();
-    drawSheet();
-  });
-}
-$('sheet-hand').addEventListener('change', () => {
-  sheet.hand = $('sheet-hand').value;
-  saveSoon();
-  drawSheet();
-});
 for (const [id, step] of [['key-down', -1], ['key-up', 1]]) {
   $(id).addEventListener('click', () => {
     sheet.transpose = Math.max(-6, Math.min(6, sheet.transpose + step));

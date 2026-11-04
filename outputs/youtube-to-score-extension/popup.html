@@ -33,9 +33,12 @@
   <p class="muted">A YouTube video, or any website with sound. Then click this button again to record it as sheet music.</p>
 </section>
 
+<!-- Any website before the icon click: Chrome hides the page from the extension until then. -->
 <section id="locked" class="hidden">
   <h1>Record this tab</h1>
-  <p class="muted">Click the YouTube to Score button in your toolbar while this tab is open. Chrome only lets the extension hear a tab after that click.</p>
+  <p id="locked-ask" class="ask hidden" role="status">Now click the YouTube to Score icon in your toolbar (in the puzzle-piece menu if it is not pinned). Recording starts as soon as you do.</p>
+  <button id="record-locked" class="pill primary wide" type="button">Record</button>
+  <p class="muted small note">Chrome lets the extension hear a tab only after you click its icon in the toolbar on that tab. Press Record, then click the icon once, and play the music.</p>
 </section>
 
 <!-- Any website: no player to read, so the recording runs from the first sound until Stop. -->
@@ -44,6 +47,11 @@
   <div class="site-row">
     <img id="site-icon" class="site-icon hidden" alt="" width="20" height="20">
     <span class="site-text"><span id="site-title" class="video-title"></span><span id="site-host" class="small muted"></span></span>
+  </div>
+  <!-- A page whose player uses copy protection gives a recording only silence. -->
+  <div id="blocked" class="blocked hidden" role="alert">
+    <strong>Recording won't work here</strong>
+    <span>This page plays copy-protected media, so Chrome gives a recording only silence and no score can be written. Find the song on YouTube and record it there instead.</span>
   </div>
   <p id="anywhere-error" class="alert hidden" role="alert"></p>
   <button id="record-tab" class="pill primary wide" type="button">Record</button>
@@ -90,7 +98,9 @@
     <span class="skeleton sk-line"></span>
     <span class="skeleton sk-line short"></span>
   </div>
+  <!-- store:strip-start -->
   <button id="fetch" class="pill primary wide hidden" type="button">Get audio now</button>
+  <!-- store:strip-end -->
   <button id="record" class="pill primary wide" type="submit">Record</button>
   <p id="method-note" class="muted small note">The video plays while it records, so a part takes as long as it lasts. Ads and buffering are left out, and the sheet music opens when it finishes.</p>
 </form>
@@ -100,6 +110,10 @@
   <p id="rec-title" class="video-title"></p>
   <canvas id="rec-wave" class="dots wave" aria-hidden="true"></canvas>
   <p class="rec-time"><span id="rec-time">0:00</span></p>
+  <div id="rec-blocked" class="blocked hidden" role="alert">
+    <strong>No sound is coming through</strong>
+    <span>This page plays copy-protected media, so Chrome gives the recording only silence and no score can be written. Discard this recording and record the song from YouTube instead.</span>
+  </div>
   <div class="actions">
     <button id="stop" class="pill primary" type="button">Stop and keep</button>
     <button id="cancel" class="text-button danger" type="button">Discard</button>

@@ -32,9 +32,17 @@ On any other website (Spotify, SoundCloud, Bandcamp, a page with an audio player
 toolbar button on that tab and press **Record**, then play the music. Silence before the first sound
 is left out, and the recording runs until **Stop and keep**, or 10 minutes at most. Only that tab is
 recorded, never other tabs or the rest of the PC. Playing along **With video** needs YouTube's player,
-so those captures have the sheet's own playback only.
+so those captures have the sheet's own playback only. Chrome lets the extension hear a tab only after
+a click on its toolbar icon there, so the panel's **Record** asks for that click first when it is
+needed and starts as soon as it comes. Sites that protect their video from copying, such as Netflix,
+give a recording only silence, so they cannot be recorded. The panel says so on any page whose
+player uses copy protection (encrypted media), both before you record and while a recording waits
+for sound. No site is named or singled out in the code, and **Try anyway** stays available.
 
-All captures are listed under **Captures** in the panel's top bar.
+All captures are listed under **Captures** in the panel's top bar. Each one has its own delete
+button. To delete several at once, press **Select**, tick the captures (or **Select all**, which
+ticks only what a search shows), then press **Delete** twice: the first press asks, the second
+deletes.
 
 ## Get audio now (optional: yt-dlp on your own PC)
 
@@ -62,11 +70,11 @@ The capture page engraves SheetSage2's result as A4 sheet music with
 [Verovio](https://www.verovio.org), with the song's title and artist in the header and
 "Transcribed by SheetSage" under them.
 
-- **Piano** (default): the melody in the right hand over a left hand written from SheetSage2's
-  chords: bass then chords on the beats (a waltz in 3/4), or held chords. The melody moves by
-  octaves into the right hand's range.
-- **Lead sheet**: the melody on one staff with chord symbols, in a treble, treble-8 or bass
-  clef to suit its range.
+- The score holds only what SheetSage2 heard in the recording: the tune on one staff, at the
+  octave it was heard, with SheetSage2's chord symbols above it, in a treble, treble-8 or bass
+  clef to suit its range. No accompaniment or other notes are added, so playback is the heard
+  tune alone. Drums, the bass line and backing parts are not written out; the chord symbols
+  stand for the harmony.
 - Rhythms are split by the beat and beamed by the beat, with ties and accidentals placed as a
   copyist would. SheetSage2's padded first bar becomes a real pickup, chord names are spelled
   for the key (B♭maj7/D, not A#maj7/C##), and its sections become rehearsal marks.
@@ -124,9 +132,12 @@ a full `https://….hf.space` URL.
 - What is stored and sent is in [PRIVACY.md](PRIVACY.md); the Web Store asks for that page's link.
 - The GitHub workflow checks the manifest (store name and description limits, every icon size,
   every file the pages and scripts load, no remote scripts) before packaging.
-- Before any Chrome Web Store submission: the store does not accept extensions that download from
-  YouTube, so a store build should leave out `native/` and `nativeMessaging`, and the MP3 download
-  may need to go too. The name should not suggest it is made by YouTube.
+- Chrome Web Store build: the store does not accept extensions that download copyrighted media, so
+  `python store/build.py` packages the extension without the yt-dlp helper (`native/`, the
+  `nativeMessaging` permission and the code between `store:strip-start` and `store:strip-end`) and
+  without a capture's MP3 download. Recording with tab capture and the score stay. The workflow keeps
+  that ZIP as the `kiku-youtube-to-score-store` artifact. The store name should not suggest it is
+  made by YouTube.
 
 ## Notes
 
