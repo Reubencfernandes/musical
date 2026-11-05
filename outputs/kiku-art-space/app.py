@@ -10,7 +10,8 @@ from diffusers import ZImagePipeline
 
 MODEL = "Tongyi-MAI/Z-Image-Turbo"
 REVISION = "f332072aa78be7aecdf3ee76d5c247082da564a6"
-SIZE = 1024
+# The library stores 768px covers; avoid rendering pixels that would be discarded.
+SIZE = 768
 
 # Loaded once at start-up; ZeroGPU attaches the GPU only while a request runs.
 pipe = ZImagePipeline.from_pretrained(MODEL, revision=REVISION, torch_dtype=torch.bfloat16, low_cpu_mem_usage=False)
@@ -23,11 +24,12 @@ def prompt_for(title, style):
     theme = re.sub(r"\s+", " ", re.sub(r"[^\w' -]+", " ", theme)).strip().lower()
     return ("A painted scene with no writing of any kind: no words, letters, captions, signs, labels or typography. "
             + (f"It evokes the theme of {theme}. " if theme and theme != "untitled song" else "")
-            + f"The feeling of the music: {style[:1200]}. "
+            + f"Interpret this song's visual brief and musical context: {style[:2000]}. "
             + "Fills a square frame edge to edge. Rich colour, cinematic lighting, fine painterly detail.")
 
 
 @spaces.GPU(duration=30)
+@torch.inference_mode()
 def paint(prompt, seed):
     generator = torch.Generator("cuda").manual_seed(seed)
     # Nine steps is eight DiT passes; the Turbo model is distilled for no guidance.

@@ -4,7 +4,7 @@ import {type Progress,LEAVING,SignedOut,fetchResult,resumeJob,runJob} from '@/li
 import {type Song,NeedsStorage,deleteSong,listSongs,markSongPublic,newId,renameSong,saveSong,saveSongCover,songAudio,songCover} from '@/lib/library';
 import {type Creator,publishSong,unpublishSong,updateShared} from '@/lib/shared';
 import {all,put,remove as forget} from '@/lib/local';
-import {cachedCover,generateCover,publishCover,forgetCover} from '@/lib/song-covers';
+import {cachedCover,generateCover,publishCover,forgetCover,setCoverPending,type CoverSong} from '@/lib/song-covers';
 import {toMp3} from '@/lib/mp3';
 import type {Controls,Meta} from '@/lib/jobs';
 import type {Model} from '@/lib/studio/models';
@@ -61,6 +61,7 @@ function useSongStore(user:User){
  const [loading,setLoading]=useState(true),[needsStorage,setNeedsStorage]=useState(!storage),[error,setError]=useState('');
  const [painting,setPainting]=useState<Set<string>>(()=>new Set()),[sharing,setSharing]=useState<Set<string>>(()=>new Set());
  const urls=useRef(new Map<string,string>()),controllers=useRef(new Map<string,AbortController>());
+ const paintControllers=useRef(new Map<string,AbortController>());
  // Songs whose current step has a server ID, and so can be picked up again later.
  const resumable=useRef(new Set<string>());
  const latest=useRef(songs),removed=useRef(new Set<string>());latest.current=songs;
@@ -74,7 +75,7 @@ function useSongStore(user:User){
  useEffect(()=>{setNeedsStorage(!storage);},[storage]);
  // Leaving the page is not stopping: songs on Modal carry on and are picked up on return. A song still
  // starting has nothing to pick up yet, so it is left to run (React's dev double mount relies on this too).
- useEffect(()=>()=>{controllers.current.forEach((c,id)=>{if(resumable.current.has(id))c.abort(LEAVING);});urls.current.forEach(u=>URL.revokeObjectURL(u));},[]);
+ useEffect(()=>()=>{controllers.current.forEach((c,id)=>{if(resumable.current.has(id))c.abort(LEAVING);});paintControllers.current.forEach(c=>c.abort(LEAVING));urls.current.forEach(u=>URL.revokeObjectURL(u));},[]);
 
  const audioUrl=useCallback(async(item:Item)=>{
   const known=urls.current.get(item.id);if(known)return known;
@@ -106,6 +107,21 @@ function useSongStore(user:User){
   remember({});
   if(record.server)resumable.current.add(id);
   const call={signal:controller.signal,status,progress,job:(server:string)=>{remember({server});resumable.current.add(id);}};
+  let artwork:ReturnType<typeof generateCover>|undefined;
+  let readyCover:Awaited<ReturnType<typeof generateCover>>|undefined;
+  const startArtwork=(song:CoverSong)=>{
+   setPainting(set=>new Set(set).add(id));setCoverPending(id,true);
+   const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(600000)]);
+   artwork=generateCover(song,signal).then(cover=>{
+    readyCover=cover;
+    if(!controller.signal.aborted&&!removed.current.has(id))publishCover(id,cover.blob);
+    return cover;
+   });
+   // Handle rejection immediately: an optional cover can fail long before the song finishes.
+   void artwork.catch(()=>{}).finally(()=>{
+    setCoverPending(id,false);setPainting(set=>{const next=new Set(set);next.delete(id);return next;});
+   });
+  };
   (async()=>{
    let idea:Idea,instrumental:boolean,result:SongResult|CoverResult;
    if(request.mode==='cover'){
@@ -131,25 +147,30 @@ function useSongStore(user:User){
      :{caption:request.idea,lyrics:'',model:request.model??'yue2',duration:null});
     const {caption,lyrics,meta,model,duration}=idea;
     instrumental=request.instrumental||!lyrics.trim();
-    result=record.server?await resumeJob<SongResult>(record.server,call):instrumental
-     ?await runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1,...request.controls},call)
-     :await runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{}),...request.controls},call);
+    const rendering=record.server?resumeJob<SongResult>(record.server,call):instrumental
+     ?runJob<SongResult>('instrumental',{style:caption,lyrics:'',duration:Math.min(240,Math.max(10,duration??60)),model,abc:'',seed:-1,...request.controls},call)
+     :runJob<SongResult>('song',{style:caption,lyrics,cot:'full',model,abc:'',seed:-1,duration:duration??-1,meta:JSON.stringify(meta||{}),...request.controls},call);
+    startArtwork({title,caption,lyrics,meta,idea:request.mode==='simple'?request.idea:undefined});
+    result=await rendering;
    }
    const {caption,lyrics,meta,model}=idea;
    if(!result.audio)throw new Error('The engine did not return the song.');
+   // Uploaded covers need the source's transcribed lyrics, which arrive with the audio result.
+   if(!artwork)startArtwork({title,caption,lyrics,meta});
    status('Preparing your song…');
    const buffer=await decode(await fetchResult(result.audio,controller.signal));
    const mp3=await toMp3(buffer);
+   controller.signal.throwIfAborted();
    const item:Item={id,title,caption,lyrics,instrumental,model,seed:('seed' in result?result.seed:undefined)??result.report?.seed,duration:buffer.duration,
-    createdAt:new Date().toISOString(),meta,idea:request.mode==='simple'?request.idea:undefined,local:mp3,saved:false};
+    createdAt:new Date().toISOString(),meta,idea:request.mode==='simple'?request.idea:undefined,local:mp3,saved:false,
+    ...(readyCover?{cover:readyCover.metadata,localCover:readyCover.blob}:{})};
    // Kept in this browser until the library has it.
    await keepLocally({id,kind:'unsaved',item});
+   if(controller.signal.aborted){await forget('songs',id).catch(()=>{});controller.signal.throwIfAborted();}
    setSongs(list=>[item,...list]);setMaking(list=>list.filter(m=>m.id!==id));
-   // Optional: without a GPU allowance left, the song keeps its gradient.
-   const artwork=generateCover(item,controller.signal).catch(()=>null);
    const saved=await keep(item);
    if(controller.signal.aborted){if(saved&&removed.current.has(id))await deleteSong(item);return;}
-   const cover=await artwork;if(!cover||controller.signal.aborted)return;
+   const cover=await artwork?.catch(()=>null);if(!cover||controller.signal.aborted||item.cover===cover.metadata)return;
    const current=latest.current.find(s=>s.id===id);if(!current||removed.current.has(id))return;
    publishCover(id,cover.blob);
    const withCover={...current,cover:cover.metadata,localCover:cover.blob};
@@ -158,13 +179,16 @@ function useSongStore(user:User){
    try{if(saved||current.saved)await saveSongCover(withCover,cover.blob);else if(storageAllowed.current)await keep(withCover);else void keepLocally({id,kind:'unsaved',item:withCover});}catch{}
   })().catch(e=>{
    if(controller.signal.reason===LEAVING)return;
+   const aborted=controller.signal.aborted;
+   controller.abort();forgetCover(id);
    void forget('songs',id).catch(()=>{});
-   if(controller.signal.aborted){setMaking(list=>list.filter(m=>m.id!==id));return;}
+   if(aborted){setMaking(list=>list.filter(m=>m.id!==id));return;}
    if(e instanceof SignedOut)setError('Your sign-in expired. Sign in again to keep making songs.');
    update({error:(e as Error).message||'That song could not be made.'});
   }).finally(()=>{controllers.current.delete(id);resumable.current.delete(id);});
  },[keep]);
  const create=useCallback((request:Request)=>{
+  setError('');
   make(newId(),request.mode==='cover'?request.title:titleFrom(request.mode==='simple'?request.idea:request.caption),request,Date.now());
  },[make]);
  // Pick up what a refreshed page was making, and show finished songs the library does not have yet.
@@ -176,29 +200,36 @@ function useSongStore(user:User){
     // A song started since this page opened (the home page hands one over on load) is already running.
     if(controllers.current.has(record.id))continue;
     if(record.kind==='making')make(record.id,record.title,record.request,record.began,record);
-    else{setSongs(list=>list.some(s=>s.id===record.id)?list:[{...record.item,saved:false},...list]);void keep(record.item);}
+    else{
+     if(record.item.localCover)publishCover(record.id,record.item.localCover);
+     setSongs(list=>list.some(s=>s.id===record.id)?list:[{...record.item,saved:false},...list]);void keep(record.item);
+    }
    }
   }).catch(()=>{});
   return()=>{active=false;};
  },[make,keep]);
  /** Cover art on request: songs made before covers existed, or a new take on one. */
  const paint=useCallback(async(item:Item)=>{
-  setPainting(set=>new Set(set).add(item.id));
+  if(paintControllers.current.has(item.id)||controllers.current.has(item.id)||removed.current.has(item.id))return;
+  const controller=new AbortController();paintControllers.current.set(item.id,controller);
+  const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(600000)]);
+  setPainting(set=>new Set(set).add(item.id));setCoverPending(item.id,true);
   try{
-   const cover=await generateCover(item,AbortSignal.timeout(600000));
+   const cover=await generateCover(item,signal);
    if(removed.current.has(item.id))return;
    publishCover(item.id,cover.blob);
    setSongs(list=>list.map(s=>s.id===item.id?{...s,cover:cover.metadata,localCover:cover.blob}:s));
    const withCover={...item,cover:cover.metadata,localCover:cover.blob};
-   if(item.saved)await saveSongCover(withCover,cover.blob);else if(storageAllowed.current)await keep(withCover);
-  }catch(e){setError(e instanceof NeedsStorage?'The cover is shown here, but saving it needs permission.':'The cover art could not be made: '+(e as Error).message);}
-  finally{setPainting(set=>{const next=new Set(set);next.delete(item.id);return next;});}
+   if(item.saved)await saveSongCover(withCover,cover.blob);else if(storageAllowed.current)await keep(withCover);else await keepLocally({id:item.id,kind:'unsaved',item:withCover});
+  }catch(e){if(!controller.signal.aborted)setError(e instanceof NeedsStorage?'The cover is shown here, but saving it needs permission.':'The cover art could not be made: '+(e as Error).message);}
+  finally{paintControllers.current.delete(item.id);setCoverPending(item.id,false);setPainting(set=>{const next=new Set(set);next.delete(item.id);return next;});}
  },[keep]);
- const cancel=useCallback((id:string)=>{controllers.current.get(id)?.abort();setMaking(list=>list.filter(m=>m.id!==id));void forget('songs',id).catch(()=>{});},[]);
+ const cancel=useCallback((id:string)=>{controllers.current.get(id)?.abort();forgetCover(id);setMaking(list=>list.filter(m=>m.id!==id));void forget('songs',id).catch(()=>{});},[]);
  const dismiss=useCallback((id:string)=>setMaking(list=>list.filter(m=>m.id!==id)),[]);
  const remove=useCallback(async(item:Item)=>{
   removed.current.add(item.id);
   controllers.current.get(item.id)?.abort();
+  paintControllers.current.get(item.id)?.abort();
   try{
    if(item.public)await unpublishSong(item,creator.current);
    if(item.saved)await deleteSong(item);forgetCover(item.id);setSongs(list=>list.filter(s=>s.id!==item.id));void forget('songs',item.id).catch(()=>{});

@@ -1212,21 +1212,21 @@ def write_time(*args, **kwargs):
 
 
 @spaces.GPU(duration=write_time)
-def _write(messages):
+def _write(messages, max_new_tokens=900):
     model, tokenizer = lyricist()
     model.to("cuda")
     try:
-        return writer.write(model, tokenizer, messages)
+        return writer.write(model, tokenizer, messages, max_new_tokens=max_new_tokens)
     finally:
         model.to("cpu")
         torch.cuda.empty_cache()
 
 
-def _until_readable(messages, read):
+def _until_readable(messages, read, max_new_tokens=900):
     """The writer samples, so an unreadable reply gets one more try."""
     for attempt in range(2):
         try:
-            return read(_write(messages))
+            return read(_write(messages, max_new_tokens))
         except ValueError as exc:
             if attempt:
                 raise gr.Error(str(exc))
@@ -1271,6 +1271,20 @@ def enhance(audio, caption, lyrics, progress=gr.Progress()):
         if measured:
             meta = {**meta, **measured, "measured": True}
         return "Enhanced", style, json.dumps(meta)
+    except gr.Error:
+        raise
+    except Exception as exc:
+        raise failed(exc)
+
+
+def artwork(title, style, lyrics="", idea="", progress=gr.Progress()):
+    """Interpret an existing song without listening again or changing its words."""
+    title, style, lyrics, idea = (str(v or "").strip() for v in (title, style, lyrics, idea))
+    if not style or len(title) > 80 or len(style) > 2000 or len(lyrics) > 8000 or len(idea) > 512:
+        raise gr.Error("Describe the song within the artwork limits.")
+    try:
+        progress(0.2, desc="Reading the song for its cover art")
+        return _until_readable(writer.artwork_messages(title, style, lyrics, idea), writer.read_artwork, max_new_tokens=220)
     except gr.Error:
         raise
     except Exception as exc:
@@ -1550,7 +1564,7 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         w_lyrics = gr.Textbox(label="Lyrics", lines=12)
         w_meta = gr.Code(label="Tempo and key", language="json")
         w_run.click(sample, [w_idea, w_inst, w_lang], [w_status, w_style, w_lyrics, w_meta],
-                    api_name="sample", concurrency_limit=2)
+                    api_name="sample", concurrency_limit=1, concurrency_id="writer")
         e_audio = gr.Audio(label="Recording to measure (optional)", type="filepath", sources=["upload"])
         e_caption = gr.Textbox(label="A few words about the sound", placeholder="warm lofi, rainy")
         e_lyrics = gr.Textbox(label="Lyrics (when it is sung)", lines=3)
@@ -1558,7 +1572,12 @@ with gr.Blocks(title="Kiku Engine", delete_cache=(3600, 86400)) as demo:
         e_status, e_style = gr.Textbox(label="Status"), gr.Textbox(label="Style")
         e_meta = gr.Code(label="Tempo and key", language="json")
         e_run.click(enhance, [e_audio, e_caption, e_lyrics], [e_status, e_style, e_meta],
-                    api_name="enhance", concurrency_limit=2)
+                    api_name="enhance", concurrency_limit=1, concurrency_id="writer")
+        art_title, art_style = gr.Textbox(visible=False), gr.Textbox(visible=False)
+        art_lyrics, art_idea = gr.Textbox(visible=False), gr.Textbox(visible=False)
+        art_run, art_prompt = gr.Button(visible=False), gr.Textbox(visible=False)
+        art_run.click(artwork, [art_title, art_style, art_lyrics, art_idea], [art_prompt],
+                      api_name="artwork", concurrency_limit=1, concurrency_id="writer")
 
     gr.Markdown("Powered by [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) and "
                 "[YuE2](https://huggingface.co/m-a-p/YuE2-3B) (both CC BY-NC 4.0, "

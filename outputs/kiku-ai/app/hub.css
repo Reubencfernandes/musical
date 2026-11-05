@@ -927,15 +927,24 @@
 }
 
 .making-art {
- @apply w-14 h-14;
- background: linear-gradient(110deg,#25252b 30%,#34343c 50%,#25252b 70%);
- background-size: 200% 100%;
- animation: hub-shimmer 1.4s linear infinite;
+ @apply block w-14 h-14;
 }
 
-.making-art i {
- @apply inset-[28%];
- border-color: #ff713366;
+.making-art>.song-art {
+ width: 100% !important;
+ height: 100% !important;
+}
+
+.making-details {
+ @apply flex items-center gap-[5px];
+}
+
+.making-tag {
+ @apply h-[15px] w-20 rounded-[9px];
+}
+
+.making-tag-short {
+ @apply w-14;
 }
 
 .song-status {
@@ -946,24 +955,6 @@
 
 .song-row.failed .song-status {
  @apply text-[#ffb39a] whitespace-normal;
-}
-
-.song-meter {
- @apply block h-[3px] rounded-[2px];
- background: #2c2c32;
- @apply overflow-hidden max-w-105;
-}
-
-.song-meter i {
- @apply block h-full;
- background: var(--accent);
- transition: width .4s linear;
-}
-
-@keyframes hub-shimmer {
- to {
-  background-position: -200% 0;
- }
 }
 
 /*Library*/
@@ -1749,16 +1740,17 @@ a.song-title {
 }
 
 @media (prefers-reduced-motion:reduce) {
- .making-art {
+ .skeleton::after {
   animation: none;
- }
- .song-meter i {
-  transition: none;
+  transform: none;
  }
  .home-place,.pub-card,.gen-drop {
   transition: none;
  }
  .song-hero-art .song-play-icon {
+  transition: none;
+ }
+ .song-art img {
   transition: none;
  }
 }

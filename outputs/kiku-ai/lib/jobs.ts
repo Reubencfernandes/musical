@@ -124,7 +124,7 @@ const audioOnly=(data:unknown[],file:Files)=>({status:String(data[0]??''),audio:
 /** Restyle and rewrite may also report whether the new music was locked to the source's beat. */
 const onBeat=(data:unknown[],file:Files)=>({...audioOnly(data,file),report:json(data[2])});
 /** Tempo, key and metre: planned by the writer, or measured from the audio when `measured`. */
-export type Meta={bpm?:number;keyscale?:string;timesignature?:string;language?:string;duration?:number;measured?:boolean};
+export type Meta={bpm?:number;keyscale?:string;timesignature?:string;language?:string;duration?:number;measured?:boolean;artwork?:string};
 
 export const JOBS:Record<string,Spec>={
  /** Restyle a clip or selection, keeping its structure while the prompt changes its sound. */
@@ -239,13 +239,19 @@ export const JOBS:Record<string,Spec>={
   if(query.length>512)return {error:'Keep the idea under 500 characters.'};
   return {args:()=>[query,text(input,'instrumental')==='true',text(input,'language')]};
  },shape:data=>({status:String(data[0]??''),caption:String(data[1]??''),lyrics:String(data[2]??''),meta:(json(data[3])||{}) as Meta})},
- /** A song's cover art from its title and style. The Space keeps the title out of the picture's lettering. */
+ /** Interpret song context using the existing writer, separately from audio generation. */
+ artwork:{endpoint:'/artwork',fixed:ENGINE,audio:'none',waiting:'Waiting to read the song for its cover…',build(input){
+  const title=text(input,'title'),style=text(input,'style'),lyrics=text(input,'lyrics'),idea=text(input,'idea');
+  if(!style||title.length>80||tooLong(style,lyrics)||idea.length>512)return {error:'Describe the song within the artwork limits.'};
+  return {args:()=>[title,style,lyrics,idea]};
+ },shape:data=>({prompt:typeof data[0]==='string'?data[0].trim().slice(0,600):''})},
+ /** A song's cover art from a visual brief and musical context. */
  art:{endpoint:'/cover',fixed:ART,audio:'none',waiting:'Waiting for a GPU to paint the cover…',build(input){
   const title=text(input,'title'),style=text(input,'style');
   if(!style)return {error:'Describe the song before painting its cover.'};
   if(title.length>80||style.length>2000)return {error:'That title or style is too long for a cover.'};
   return {args:()=>[title,style,seed(input)]};
- },shape:(data,file)=>({image:file(data[0]),seed:Number(data[1])||undefined})},
+ },shape:(data,file)=>({image:file(data[0]),seed:data[1]!=null&&Number.isFinite(Number(data[1]))?Number(data[1]):undefined})},
  /** YuE2 drafts a score from a prompt and lyrics, for the user to edit before it is performed. */
  plan:{endpoint:'/plan_score',models:['yue2'],audio:'none',waiting:'Waiting for a GPU to write your score…',build(input){
   const style=text(input,'style'),lyrics=text(input,'lyrics'),instrumental=input instanceof FormData?text(input,'instrumental')==='true':!!input.instrumental;

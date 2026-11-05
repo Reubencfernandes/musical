@@ -7,6 +7,7 @@ import LyricsDialog from './LyricsDialog';
 import {usePlayer} from '@/components/shell/Player';
 import {modelLabel} from '@/lib/studio/models';
 import type {Item,Making} from './useSongs';
+import {Skeleton} from '@/components/Skeleton';
 
 const clock=(s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 /** A song's model by name; ACE-Step 1.5 is no longer offered, but songs made with it keep its name. */
@@ -14,22 +15,13 @@ export const label=(model:string)=>model==='ace15'?'ACE-Step 1.5':model==='yue2'
 /** A song's own page, which works for anyone once it is public and for its owner always. */
 export const songPath=(handle:string,id:string)=>`/song/${encodeURIComponent(handle)}/${encodeURIComponent(id)}`;
 
-/** How far a song being made looks; the same rule as the studio's job lanes. */
-function shown(m:Making,now:number){
- if(!m.running)return Math.min(0.05,(now-m.began)/1000/1200);
- const elapsed=(now-m.running)/1000;
- const guess=m.etaAt?elapsed/(elapsed+Math.max(1,(m.etaAt-now)/1000)):1-Math.exp(-elapsed/75);
- return Math.min(0.97,Math.max(m.progress??0,guess*0.97));
-}
-
 export function MakingRow({item,now,cancel,dismiss}:{item:Making;now:number;cancel:()=>void;dismiss:()=>void}){
- const done=shown(item,now);
- return <li className={'song-row making'+(item.error?' failed':'')}>
-  <span className="song-art making-art" aria-hidden="true"><i/></span>
+ return <li className={'song-row making'+(item.error?' failed':'')} aria-busy={!item.error}>
+  <span className="making-art"><SongArt id={item.id} pending={!item.error}/></span>
   <div className="song-info"><strong>{item.title}</strong>
-   <span className="song-status" role="status">{item.error||(item.queue?`In queue · ${item.queue} ahead`:item.status)}</span>
-   {!item.error&&<span className="song-meter" aria-hidden="true"><i style={{width:`${Math.round(done*100)}%`}}/></span>}</div>
-  <span className="song-time">{item.error?'':`${Math.round(done*100)}%`}</span>
+   {!item.error&&<span className="making-details" aria-hidden="true"><Skeleton className="making-tag"/><Skeleton className="making-tag making-tag-short"/></span>}
+   <span className="song-status" role="status">{item.error||(item.queue?`In queue · ${item.queue} ahead`:item.status)}</span></div>
+  <span className="song-time" aria-label="Time spent generating">{item.error?'':clock(Math.max(0,(now-item.began)/1000))}</span>
   <div className="song-actions"><button onClick={item.error?dismiss:cancel} aria-label={item.error?'Dismiss':'Cancel'} title={item.error?'Dismiss':'Cancel'}><X size={15}/></button></div>
  </li>;
 }
@@ -48,7 +40,7 @@ export function SongRow({item,audioUrl,remove,rename,paint,painting=false,share,
  }
  return <li className={'song-row'+(active?' active':'')}>
   <button className="song-play" onClick={play} aria-label={playing?`Pause ${item.title}`:`Play ${item.title}`}>
-   <SongArt id={item.id} cover={!!item.cover}/><span className="song-play-icon">{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</span></button>
+   <SongArt id={item.id} cover={!!item.cover} pending={painting}/><span className="song-play-icon">{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</span></button>
   <div className="song-info">
    {editing?<input className="song-title-input" value={title} autoFocus maxLength={80} aria-label="Song title" onChange={e=>setTitle(e.target.value)}
      onBlur={()=>{setEditing(false);rename(item,title);}} onKeyDown={e=>{if(e.key==='Enter')(e.target as HTMLInputElement).blur();if(e.key==='Escape'){setTitle(item.title);setEditing(false);}}}/>
