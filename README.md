@@ -1,3 +1,19 @@
+<!-- Translations of this page live in docs/readme/README.<language>.md. Update them when this page changes. -->
+
+<p align="center">
+  <b>English</b> ·
+  <a href="docs/readme/README.zh-CN.md">简体中文</a> ·
+  <a href="docs/readme/README.es.md">Español</a> ·
+  <a href="docs/readme/README.hi.md">हिन्दी</a> ·
+  <a href="docs/readme/README.ar.md">العربية</a> ·
+  <a href="docs/readme/README.pt-BR.md">Português</a> ·
+  <a href="docs/readme/README.fr.md">Français</a> ·
+  <a href="docs/readme/README.ru.md">Русский</a> ·
+  <a href="docs/readme/README.ja.md">日本語</a> ·
+  <a href="docs/readme/README.de.md">Deutsch</a> ·
+  <a href="docs/readme/README.ko.md">한국어</a>
+</p>
+
 <p align="center"><img src="branding/kiku-mark.png" width="96" alt="Kiku AI"></p>
 
 <h1 align="center">Kiku AI</h1>
